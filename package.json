@@ -1,0 +1,11 @@
+{
+  "name": "seoul-workstudent-manager",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "서울 총무팀 근로장학생 관리 시스템 검토용 시안",
+  "scripts": {
+    "test": "node --test",
+    "start": "python3 -m http.server 4173"
+  }
+}
