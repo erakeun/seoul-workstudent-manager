@@ -1,137 +1,58 @@
-/**
- * 서울 총무팀 근로장학생 관리 API
- *
- * 이 파일은 Apps Script 프로젝트에 배포하는 서버 코드입니다.
- * 배포 전 프로젝트 설정 > 스크립트 속성에 INITIAL_ADMIN_PASSWORD를 설정한 뒤
- * 편집기에서 initialize()를 한 번 실행합니다. 이 값은 GitHub에 올리지 않습니다.
- */
-const DATA_KEY = 'seoul_workstudent_data_v2';
-const SESSION_PREFIX = 'seoul_workstudent_session_';
+/** 서울 근로장학생 관리 API v3 — Apps Script 프로젝트에 배포합니다. */
+// 실제 운영 배포본의 키를 유지하여 기존 학생·일정·계정을 보존합니다.
+const DATA_KEY = 'swtm2';
+const SESSION_PREFIX = 'sess_';
 const SESSION_HOURS = 24;
 
 function doGet(e) { return handle_(request_(e)); }
 function doPost(e) { return handle_(request_(e)); }
-
-function request_(e) {
-  const params = (e && e.parameter) || {};
-  let body = {};
-  try { body = e && e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {}; } catch (_) {}
-  return Object.assign({}, body, params, { action: body.action || params.action || '' });
-}
-
+function request_(e) { const params=(e&&e.parameter)||{};let body={};try{body=e&&e.postData&&e.postData.contents?JSON.parse(e.postData.contents):{};}catch(_){}return Object.assign({},body,params,{action:body.action||params.action||''}); }
 function handle_(req) {
   try {
-    const action = req.action;
-    if (action === 'login') return respond_(login_(req.username, req.password));
-    if (action === 'logout') return respond_(logout_(req.token));
-    if (action === 'session') return respond_(loadApp_(req.token));
-    if (action === 'loadApp') return respond_(loadApp_(req.token));
-    if (action === 'adminSaveData') return respond_(adminSaveData_(req.token, req.data));
-    if (action === 'adminUpsertUser') return respond_(adminUpsertUser_(req.token, req.user));
-    if (action === 'adminDeleteUser') return respond_(adminDeleteUser_(req.token, req.userId));
-    if (action === 'studentCreateSwap') return respond_(studentCreateSwap_(req.token, req.swap));
-    if (action === 'adminUpdateSwap') return respond_(adminUpdateSwap_(req.token, req.swapId, req.status, req.note));
-    if (action === 'studentMarkNoticeRead') return respond_(studentMarkNoticeRead_(req.token, req.noticeId));
-    return respond_({ ok: false, error: '알 수 없는 요청입니다.' });
-  } catch (err) {
-    return respond_({ ok: false, error: err.message || '서버 처리 중 오류가 발생했습니다.' });
-  }
+    if(req.action==='login')return respond_(login_(req.username,req.password));
+    if(req.action==='logout')return respond_(logout_(req.token));
+    if(req.action==='session'||req.action==='loadApp')return respond_(loadApp_(req.token));
+    if(req.action==='adminSaveData')return respond_(adminSaveData_(req.token,req.data));
+    if(req.action==='adminUpsertUser')return respond_(adminUpsertUser_(req.token,req.user));
+    if(req.action==='adminDeleteUser')return respond_(adminDeleteUser_(req.token,req.userId));
+    if(req.action==='studentCreateSwap')return respond_(studentCreateSwap_(req.token,req.swap));
+    if(req.action==='studentApplySwap')return respond_(studentApplySwap_(req.token,req.swapId));
+    if(req.action==='adminUpdateSwap')return respond_(adminUpdateSwap_(req.token,req.swapId,req.status,req.note,req.assigneeId));
+    if(req.action==='studentMarkNoticeRead')return respond_(studentMarkNoticeRead_(req.token,req.noticeId));
+    return respond_({ok:false,error:'알 수 없는 요청입니다.'});
+  } catch(err) { return respond_({ok:false,error:err.message||'서버 처리 중 오류가 발생했습니다.'}); }
 }
+function respond_(payload){return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);}
 
-function respond_(payload) {
-  return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
-}
+/** 최초 1회 편집기에서 실행합니다. 기존 DATA_KEY 값은 절대 덮어쓰지 않습니다. */
+function initialize(){const props=PropertiesService.getScriptProperties();if(props.getProperty(DATA_KEY))return '이미 초기화되었습니다.';const password=props.getProperty('INITIAL_ADMIN_PASSWORD');if(!password)throw new Error('INITIAL_ADMIN_PASSWORD를 먼저 설정하세요.');const admin=makeUser_({id:Utilities.getUuid(),username:'admin',name:'서울 총무팀 관리자',role:'admin',active:true},password);saveData_({version:3,students:[],schedules:[],exceptions:[],accounts:[admin],notices:[],handovers:[],swaps:[],semesters:[{id:'semester-2026-2',name:'2026-2학기',startDate:'2026-09-01',endDate:'2027-02-28',active:true,budgets:{general:{total:0,wage:0},holmz:{total:0,wage:0}}}],settings:{activeSemesterId:'semester-2026-2',initializedAt:new Date().toISOString()}});return '초기 관리자 계정이 생성되었습니다.';}
 
-/** 최초 1회 편집기에서 실행. 프로젝트 속성의 INITIAL_ADMIN_PASSWORD가 필요합니다. */
-function initialize() {
-  const props = PropertiesService.getScriptProperties();
-  if (props.getProperty(DATA_KEY)) return '이미 초기화되었습니다.';
-  const password = props.getProperty('INITIAL_ADMIN_PASSWORD');
-  if (!password) throw new Error('프로젝트 설정에 INITIAL_ADMIN_PASSWORD를 먼저 설정하세요.');
-  const admin = makeUser_({ id: Utilities.getUuid(), username: 'admin', name: '서울 총무팀 관리자', role: 'admin', active: true }, password);
-  saveData_({ students: [], schedules: [], accounts: [admin], notices: [], handovers: [], swaps: [], settings: { initializedAt: new Date().toISOString() } });
-  return '초기 관리자 계정이 생성되었습니다. 로그인 후 즉시 비밀번호를 변경하세요.';
-}
+function login_(username,password){const data=data_(),account=data.accounts.find(x=>x.username===String(username||'').trim()&&x.active),valid=account&&(account.passwordHash?account.passwordHash===hash_(password,account.salt):account.h===legacyHash_(password,account.s));if(!valid)return{ok:false,error:'아이디 또는 비밀번호를 확인하세요.'};validateStudentLink_(data,account);const token=Utilities.getUuid();PropertiesService.getScriptProperties().setProperty(SESSION_PREFIX+token,JSON.stringify({id:account.id,e:Date.now()+SESSION_HOURS*3600000}));return{ok:true,token:token,user:publicUser_(account),data:dataForUser_(data,account)};}
+function logout_(token){PropertiesService.getScriptProperties().deleteProperty(SESSION_PREFIX+token);return{ok:true};}
+function loadApp_(token){const user=requireUser_(token),data=data_();validateStudentLink_(data,user);return{ok:true,user:publicUser_(user),data:dataForUser_(data,user)};}
 
-function login_(username, password) {
-  const data = data_();
-  const account = data.accounts.find(x => x.username === String(username || '').trim() && x.active);
-  if (!account || account.passwordHash !== hash_(password, account.salt)) return { ok: false, error: '아이디 또는 비밀번호를 확인하세요.' };
-  const token = Utilities.getUuid();
-  PropertiesService.getScriptProperties().setProperty(SESSION_PREFIX + token, JSON.stringify({ userId: account.id, expiresAt: Date.now() + SESSION_HOURS * 3600000 }));
-  return { ok: true, token: token, user: publicUser_(account), data: publicData_(data) };
-}
+function adminSaveData_(token,incoming){requireAdmin_(token);if(!incoming||!Array.isArray(incoming.students)||!Array.isArray(incoming.schedules))throw new Error('저장할 데이터 형식이 올바르지 않습니다.');const current=data_(),next=normalizeData_(incoming);next.accounts=current.accounts;saveData_(next);return{ok:true,data:dataForUser_(next,requireAdmin_(token))};}
+function adminUpsertUser_(token,incoming){requireAdmin_(token);if(!incoming||!incoming.username||!incoming.name||!incoming.role)throw new Error('이름, 아이디, 역할은 필수입니다.');const data=data_();if(incoming.role==='student'){const student=data.students.find(x=>x.id===incoming.studentId&&x.active);if(!student)throw new Error('학생 계정은 활성 학생과 연결해야 합니다.');}let user=data.accounts.find(x=>x.id===incoming.id);if(user){if(data.accounts.some(x=>x.id!==user.id&&x.username===incoming.username))throw new Error('이미 사용 중인 아이디입니다.');user.username=incoming.username;user.name=incoming.name;user.role=incoming.role;user.studentId=incoming.studentId||'';user.active=incoming.active!==false;if(incoming.password){user.salt=Utilities.getUuid();user.s=user.salt;user.passwordHash=hash_(incoming.password,user.salt);user.h=user.passwordHash;}}else{if(!incoming.password)throw new Error('새 계정의 초기 비밀번호를 입력하세요.');if(data.accounts.some(x=>x.username===incoming.username))throw new Error('이미 사용 중인 아이디입니다.');user=makeUser_({id:Utilities.getUuid(),username:incoming.username,name:incoming.name,role:incoming.role,studentId:incoming.studentId||'',active:incoming.active!==false},incoming.password);data.accounts.push(user);}saveData_(data);return{ok:true,data:dataForUser_(data,requireAdmin_(token))};}
+function adminDeleteUser_(token,userId){const admin=requireAdmin_(token),data=data_();if(admin.id===userId)throw new Error('현재 로그인한 관리자 계정은 삭제할 수 없습니다.');data.accounts=data.accounts.filter(x=>x.id!==userId);saveData_(data);return{ok:true,data:dataForUser_(data,admin)};}
 
-function logout_(token) { PropertiesService.getScriptProperties().deleteProperty(SESSION_PREFIX + token); return { ok: true }; }
-function loadApp_(token) { const user = requireUser_(token); return { ok: true, user: publicUser_(user), data: publicData_(data_()) }; }
+function studentCreateSwap_(token,incoming){const user=requireStudent_(token),data=data_(),student=studentForUser_(data,user);if(!incoming||!incoming.scheduleId||!incoming.date||!incoming.reason)throw new Error('대상 일정과 사유를 입력하세요.');const schedule=data.schedules.find(x=>x.id===incoming.scheduleId&&x.studentId===student.id&&x.site===student.site&&x.semesterId===data.settings.activeSemesterId);if(!schedule)throw new Error('현재 학기의 본인 근무만 요청할 수 있습니다.');if(data.swaps.some(x=>x.scheduleId===schedule.id&&x.date===incoming.date&&!['반려','취소'].includes(x.status)))throw new Error('같은 근무에 진행 중인 대타 요청이 있습니다.');data.swaps.unshift({id:Utilities.getUuid(),scheduleId:schedule.id,site:student.site,semesterId:data.settings.activeSemesterId,requesterId:user.id,requesterStudentId:student.id,requesterName:student.name,date:incoming.date,reason:incoming.reason,status:'모집중',applicants:[],assigneeId:'',assigneeName:'',adminNote:'',createdAt:new Date().toISOString()});saveData_(data);return{ok:true,data:dataForUser_(data,user)};}
+function studentApplySwap_(token,swapId){const user=requireStudent_(token),data=data_(),student=studentForUser_(data,user),swap=data.swaps.find(x=>x.id===swapId&&x.status==='모집중');if(!swap)throw new Error('현재 모집 중인 대타가 아닙니다.');if(swap.site!==student.site)throw new Error('다른 근무지의 대타는 신청할 수 없습니다.');if(swap.semesterId!==data.settings.activeSemesterId)throw new Error('현재 학기의 대타만 신청할 수 있습니다.');if(swap.requesterStudentId===student.id)throw new Error('본인 요청에는 신청할 수 없습니다.');swap.applicants=swap.applicants||[];if(swap.applicants.some(x=>x.studentId===student.id))throw new Error('이미 신청한 대타입니다.');swap.applicants.push({studentId:student.id,name:student.name,appliedAt:new Date().toISOString()});saveData_(data);return{ok:true,data:dataForUser_(data,user)};}
+function adminUpdateSwap_(token,swapId,status,note,assigneeId){const admin=requireAdmin_(token),data=data_(),swap=data.swaps.find(x=>x.id===swapId);if(!swap)throw new Error('대타 요청을 찾을 수 없습니다.');if(status==='대타확정'){const assignee=data.students.find(x=>x.id===assigneeId&&x.active);if(!assignee||assignee.site!==swap.site)throw new Error('같은 근무지의 활성 학생만 대타로 확정할 수 있습니다.');if(!(swap.applicants||[]).some(x=>x.studentId===assignee.id))throw new Error('가져가기를 신청한 학생만 확정할 수 있습니다.');swap.assigneeId=assignee.id;swap.assigneeName=assignee.name;}else if(status==='반려'){swap.assigneeId='';swap.assigneeName='';}swap.status=status;swap.adminNote=note||'';swap.updatedAt=new Date().toISOString();saveData_(data);return{ok:true,data:dataForUser_(data,admin)};}
+function studentMarkNoticeRead_(token,noticeId){const user=requireStudent_(token),data=data_(),student=studentForUser_(data,user),notice=data.notices.find(x=>x.id===noticeId);if(!notice||notice.semesterId!==data.settings.activeSemesterId||!['all',student.site].includes(notice.site))throw new Error('확인할 수 없는 공지입니다.');notice.readBy=notice.readBy||[];if(!notice.readBy.includes(user.id))notice.readBy.push(user.id);saveData_(data);return{ok:true};}
 
-function adminSaveData_(token, incoming) {
-  requireAdmin_(token);
-  if (!incoming || !Array.isArray(incoming.students) || !Array.isArray(incoming.schedules)) throw new Error('저장할 데이터 형식이 올바르지 않습니다.');
-  const current = data_();
-  current.students = incoming.students;
-  current.schedules = incoming.schedules;
-  current.notices = Array.isArray(incoming.notices) ? incoming.notices : current.notices;
-  current.handovers = Array.isArray(incoming.handovers) ? incoming.handovers : current.handovers;
-  current.swaps = Array.isArray(incoming.swaps) ? incoming.swaps : current.swaps;
-  saveData_(current);
-  return { ok: true, data: publicData_(current) };
-}
-
-function adminUpsertUser_(token, incoming) {
-  requireAdmin_(token);
-  if (!incoming || !incoming.username || !incoming.name || !incoming.role) throw new Error('이름, 아이디, 역할은 필수입니다.');
-  const data = data_();
-  let user = data.accounts.find(x => x.id === incoming.id);
-  if (user) {
-    if (data.accounts.some(x => x.id !== user.id && x.username === incoming.username)) throw new Error('이미 사용 중인 아이디입니다.');
-    user.username = incoming.username; user.name = incoming.name; user.role = incoming.role; user.studentId = incoming.studentId || ''; user.active = incoming.active !== false;
-    if (incoming.password) { user.salt = Utilities.getUuid(); user.passwordHash = hash_(incoming.password, user.salt); }
-  } else {
-    if (!incoming.password) throw new Error('새 계정의 초기 비밀번호를 입력하세요.');
-    if (data.accounts.some(x => x.username === incoming.username)) throw new Error('이미 사용 중인 아이디입니다.');
-    user = makeUser_({ id: Utilities.getUuid(), username: incoming.username, name: incoming.name, role: incoming.role, studentId: incoming.studentId || '', active: incoming.active !== false }, incoming.password);
-    data.accounts.push(user);
-  }
-  saveData_(data); return { ok: true, data: publicData_(data) };
-}
-
-function adminDeleteUser_(token, userId) {
-  const admin = requireAdmin_(token); const data = data_();
-  if (admin.id === userId) throw new Error('현재 로그인한 관리자 계정은 삭제할 수 없습니다.');
-  data.accounts = data.accounts.filter(x => x.id !== userId); saveData_(data); return { ok: true, data: publicData_(data) };
-}
-
-function studentCreateSwap_(token, swap) {
-  const user = requireUser_(token); if (user.role !== 'student') throw new Error('학생 계정만 대타 요청을 등록할 수 있습니다.');
-  if (!swap || !swap.scheduleId || !swap.date || !swap.reason) throw new Error('대상 일정과 사유를 입력하세요.');
-  const data = data_();
-  const schedule = data.schedules.find(x => x.id === swap.scheduleId && x.studentId === user.studentId);
-  if (!schedule) throw new Error('본인의 근무 일정만 요청할 수 있습니다.');
-  data.swaps.unshift({ id: Utilities.getUuid(), scheduleId: schedule.id, site: schedule.site, requesterId: user.id, requesterName: user.name, date: swap.date, reason: swap.reason, status: '대기', adminNote: '', createdAt: new Date().toISOString() });
-  saveData_(data); return { ok: true, data: publicData_(data) };
-}
-
-function adminUpdateSwap_(token, swapId, status, note) {
-  requireAdmin_(token); const data = data_(); const swap = data.swaps.find(x => x.id === swapId); if (!swap) throw new Error('대타 요청을 찾을 수 없습니다.');
-  swap.status = status; swap.adminNote = note || ''; swap.updatedAt = new Date().toISOString(); saveData_(data); return { ok: true, data: publicData_(data) };
-}
-
-function studentMarkNoticeRead_(token, noticeId) {
-  const user = requireUser_(token); const data = data_(); const notice = data.notices.find(x => x.id === noticeId); if (!notice) throw new Error('공지를 찾을 수 없습니다.');
-  notice.readBy = notice.readBy || []; if (!notice.readBy.includes(user.id)) notice.readBy.push(user.id); saveData_(data); return { ok: true };
-}
-
-function requireUser_(token) {
-  const sessionRaw = PropertiesService.getScriptProperties().getProperty(SESSION_PREFIX + token);
-  if (!sessionRaw) throw new Error('로그인이 필요하거나 세션이 만료되었습니다.');
-  const session = JSON.parse(sessionRaw); if (session.expiresAt < Date.now()) { PropertiesService.getScriptProperties().deleteProperty(SESSION_PREFIX + token); throw new Error('세션이 만료되었습니다. 다시 로그인하세요.'); }
-  const user = data_().accounts.find(x => x.id === session.userId && x.active); if (!user) throw new Error('사용할 수 없는 계정입니다.'); return user;
-}
-function requireAdmin_(token) { const user = requireUser_(token); if (user.role !== 'admin') throw new Error('관리자 권한이 필요합니다.'); return user; }
-function data_() { const raw = PropertiesService.getScriptProperties().getProperty(DATA_KEY); if (!raw) throw new Error('서버 초기화가 필요합니다.'); return JSON.parse(raw); }
-function saveData_(data) { PropertiesService.getScriptProperties().setProperty(DATA_KEY, JSON.stringify(data)); }
-function hash_(password, salt) { let value = String(password || '') + ':' + salt; for (let i = 0; i < 5000; i++) value = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value)); return value; }
-function makeUser_(fields, password) { const salt = Utilities.getUuid(); return Object.assign({}, fields, { salt: salt, passwordHash: hash_(password, salt) }); }
-function publicUser_(user) { return { id: user.id, username: user.username, name: user.name, role: user.role, studentId: user.studentId || '', active: user.active }; }
-function publicData_(data) { return { students: data.students || [], schedules: data.schedules || [], notices: data.notices || [], handovers: data.handovers || [], swaps: data.swaps || [], accounts: (data.accounts || []).map(publicUser_) }; }
+function normalizeData_(raw){const data=JSON.parse(JSON.stringify(raw||{}));data.version=3;data.settings=data.settings||{};data.semesters=Array.isArray(data.semesters)&&data.semesters.length?data.semesters:[{id:'semester-2026-2',name:'2026-2학기',startDate:'2026-09-01',endDate:'2027-02-28',active:true,budgets:{general:{total:0,wage:0,rates:{}},holmz:{total:0,wage:0,rates:{}}}}];data.semesters.forEach(function(s){s.budgets=s.budgets||{};s.budgets.general=Object.assign({total:0,wage:0,rates:{}},s.budgets.general||{});s.budgets.holmz=Object.assign({total:0,wage:0,rates:{}},s.budgets.holmz||{});});data.settings.activeSemesterId=data.settings.activeSemesterId||(data.semesters.find(function(s){return s.active;})||data.semesters[0]).id;const semesterId=data.settings.activeSemesterId;data.students=(data.students||[]).map(function(s,i){return Object.assign({studentNumber:'',phone:'',email:'',active:true,color:colorFor_(s.id||String(i)),semesterIds:[semesterId]},s);});data.schedules=(data.schedules||[]).map(function(x){return Object.assign({semesterId:semesterId},x);});data.exceptions=(data.exceptions||[]).map(function(x){return Object.assign({semesterId:semesterId},x);});data.notices=(data.notices||[]).map(function(x){return Object.assign({site:'all',important:false,semesterId:semesterId,readBy:[]},x);});data.handovers=(data.handovers||[]).map(function(x){return Object.assign({site:'all',important:false,url:'',semesterId:semesterId},x);});data.swaps=(data.swaps||[]).map(function(x){return Object.assign({applicants:[],semesterId:semesterId},x);});data.accounts=data.accounts||[];return data;}
+function dataForUser_(data,user){data=normalizeData_(data);if(user.role==='admin')return publicAdminData_(data);const student=studentForUser_(data,user),site=student.site,semesterId=data.settings.activeSemesterId,semesters=data.semesters.map(function(x){return{id:x.id,name:x.name,startDate:x.startDate,endDate:x.endDate,active:x.active,budgets:{general:{total:0,wage:0},holmz:{total:0,wage:0}}};});return{version:data.version,settings:data.settings,semesters:semesters,students:[safeStudent_(student)],schedules:data.schedules.filter(x=>x.site===site&&x.semesterId===semesterId),exceptions:data.exceptions.filter(x=>x.site===site&&x.semesterId===semesterId),notices:data.notices.filter(x=>(x.site==='all'||x.site===site)&&x.semesterId===semesterId),handovers:data.handovers.filter(x=>(x.site==='all'||x.site===site)&&x.semesterId===semesterId),swaps:data.swaps.filter(x=>x.site===site&&x.semesterId===semesterId),accounts:[]};}
+function publicAdminData_(data){return{version:data.version,settings:data.settings,semesters:data.semesters,students:data.students,schedules:data.schedules,exceptions:data.exceptions,notices:data.notices,handovers:data.handovers,swaps:data.swaps,accounts:data.accounts.map(publicUser_)};}
+function safeStudent_(student){return{id:student.id,name:student.name,site:student.site,type:student.type,active:student.active,color:student.color,semesterIds:student.semesterIds||[]};}
+function validateStudentLink_(data,user){if(user.role==='student')studentForUser_(data,user);}
+function studentForUser_(data,user){const student=data.students.find(x=>x.id===user.studentId&&x.active);if(!student)throw new Error('계정에 연결된 활성 학생 정보가 없습니다.');return student;}
+function requireUser_(token){const raw=PropertiesService.getScriptProperties().getProperty(SESSION_PREFIX+token);if(!raw)throw new Error('로그인이 필요하거나 세션이 만료되었습니다.');const session=JSON.parse(raw),expiresAt=session.expiresAt||session.e,userId=session.userId||session.id;if(expiresAt<Date.now()){PropertiesService.getScriptProperties().deleteProperty(SESSION_PREFIX+token);throw new Error('세션이 만료되었습니다. 다시 로그인하세요.');}const user=data_().accounts.find(x=>x.id===userId&&x.active);if(!user)throw new Error('사용할 수 없는 계정입니다.');return user;}
+function requireAdmin_(token){const user=requireUser_(token);if(user.role!=='admin')throw new Error('관리자 권한이 필요합니다.');return user;}
+function requireStudent_(token){const user=requireUser_(token);if(user.role!=='student')throw new Error('학생 계정만 사용할 수 있습니다.');return user;}
+function data_(){const raw=PropertiesService.getScriptProperties().getProperty(DATA_KEY);if(!raw)throw new Error('서버 초기화가 필요합니다.');return normalizeData_(JSON.parse(raw));}
+function saveData_(data){PropertiesService.getScriptProperties().setProperty(DATA_KEY,JSON.stringify(normalizeData_(data)));}
+function hash_(password,salt){let value=String(password||'')+':'+salt;for(let i=0;i<5000;i++)value=Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,value));return value;}
+function legacyHash_(password,salt){let value=String(password||'')+salt;for(let i=0;i<2000;i++)value=Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,value));return value;}
+function makeUser_(fields,password){const salt=Utilities.getUuid(),passwordHash=hash_(password,salt);return Object.assign({},fields,{salt:salt,passwordHash:passwordHash,s:salt,h:passwordHash});}
+function publicUser_(user){return{id:user.id,username:user.username,name:user.name,role:user.role,studentId:user.studentId||'',active:user.active};}
+function colorFor_(id){const colors=['#2f6f9f','#2d7d74','#7b5ba7','#b8673e','#537e4c','#a34f6f'];let n=0;String(id||'').split('').forEach(function(c){n+=c.charCodeAt(0);});return colors[n%colors.length];}

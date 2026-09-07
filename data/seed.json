@@ -1,14 +1,19 @@
 {
+  "version": 3,
+  "settings": {"activeSemesterId":"semester-2026-2"},
+  "semesters": [
+    {"id":"semester-2026-2","name":"2026-2학기","startDate":"2026-09-01","endDate":"2027-02-28","active":true,"budgets":{"general":{"total":0,"wage":0},"holmz":{"total":0,"wage":0}}}
+  ],
   "students": [
-    {"id":"ga-kwon","name":"권기재","site":"general","type":"교내근로","active":true},
-    {"id":"ga-choi-in","name":"최인승","site":"general","type":"국가근로","active":true},
-    {"id":"ga-lee","name":"이종혁","site":"general","type":"국가근로","active":true},
-    {"id":"ga-choi-jong","name":"최종현","site":"general","type":"교내근로","active":true},
-    {"id":"holmz-han","name":"한상윤","site":"holmz","type":"교내근로","active":true},
-    {"id":"holmz-kwon","name":"권희진","site":"holmz","type":"교내근로","active":true},
-    {"id":"holmz-seo","name":"서민용","site":"holmz","type":"교내근로","active":true},
-    {"id":"holmz-kim","name":"김윤재","site":"holmz","type":"교내근로","active":true},
-    {"id":"holmz-lee","name":"이호창","site":"holmz","type":"교내근로","active":true}
+    {"id":"ga-kwon","name":"권기재","site":"general","type":"교내근로","active":true,"color":"#2f6f9f","studentNumber":"","phone":"","email":"","semesterIds":["semester-2026-2"]},
+    {"id":"ga-choi-in","name":"최인승","site":"general","type":"국가근로","active":true,"color":"#2d7d74","studentNumber":"","phone":"","email":"","semesterIds":["semester-2026-2"]},
+    {"id":"ga-lee","name":"이종혁","site":"general","type":"국가근로","active":true,"color":"#7b5ba7","studentNumber":"","phone":"","email":"","semesterIds":["semester-2026-2"]},
+    {"id":"ga-choi-jong","name":"최종현","site":"general","type":"교내근로","active":true,"color":"#b8673e","studentNumber":"","phone":"","email":"","semesterIds":["semester-2026-2"]},
+    {"id":"holmz-han","name":"한상윤","site":"holmz","type":"교내근로","active":true,"color":"#537e4c","studentNumber":"","phone":"","email":"","semesterIds":["semester-2026-2"]},
+    {"id":"holmz-kwon","name":"권희진","site":"holmz","type":"교내근로","active":true,"color":"#a34f6f","studentNumber":"","phone":"","email":"","semesterIds":["semester-2026-2"]},
+    {"id":"holmz-seo","name":"서민용","site":"holmz","type":"교내근로","active":true,"color":"#3f7693","studentNumber":"","phone":"","email":"","semesterIds":["semester-2026-2"]},
+    {"id":"holmz-kim","name":"김윤재","site":"holmz","type":"교내근로","active":true,"color":"#8b6b32","studentNumber":"","phone":"","email":"","semesterIds":["semester-2026-2"]},
+    {"id":"holmz-lee","name":"이호창","site":"holmz","type":"교내근로","active":true,"color":"#4967a9","studentNumber":"","phone":"","email":"","semesterIds":["semester-2026-2"]}
   ],
   "schedules": [
     {"id":"g-mon-in","site":"general","studentId":"ga-choi-in","studentName":"최인승","kind":"weekly","weekday":1,"start":"08:30","end":"10:00"},
@@ -46,5 +51,10 @@
     {"id":"h-sat-lee","site":"holmz","studentId":"holmz-lee","studentName":"이호창","kind":"weekly","weekday":6,"start":"12:00","end":"18:00"},
     {"id":"h-sun-kwon","site":"holmz","studentId":"holmz-kwon","studentName":"권희진","kind":"weekly","weekday":0,"start":"10:00","end":"14:00"},
     {"id":"h-sun-lee","site":"holmz","studentId":"holmz-lee","studentName":"이호창","kind":"weekly","weekday":0,"start":"14:00","end":"18:00"}
-  ]
+  ],
+  "exceptions": [],
+  "notices": [],
+  "handovers": [],
+  "swaps": [],
+  "accounts": []
 }
