@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateBudget, eventsForDate, filterDataForStudent, lanes, normalizeData, scheduleOccursOn, statusFor, visibleWeekdays } from '../app.js';
+import { attendanceForEvent, calculateBudget, eventsForDate, filterDataForStudent, hasTimeConflict, lanes, normalizeData, recognizedAttendance, scheduleOccursOn, statusFor, visibleWeekdays } from '../app.js';
 
 const data = { schedules: [
   { id: 'monday', site: 'general', studentName: '권기재', kind: 'weekly', weekday: 1, start: '08:30', end: '12:00' },
@@ -28,11 +28,14 @@ test('overlapping schedules receive separate lanes', () => {
 
 test('legacy data migrates without deleting existing records', () => {
   const migrated = normalizeData({ students:[{id:'s1',name:'학생',site:'general',type:'교내근로'}], schedules:[{id:'w1',site:'general',studentId:'s1',studentName:'학생',kind:'weekly',weekday:1,start:'09:00',end:'10:00'}] });
-  assert.equal(migrated.version, 3);
+  assert.equal(migrated.version, 4);
   assert.equal(migrated.students[0].name, '학생');
   assert.match(migrated.students[0].color, /^#[0-9a-f]{6}$/i);
   assert.equal(migrated.schedules[0].semesterId, migrated.settings.activeSemesterId);
   assert.deepEqual(migrated.exceptions, []);
+  assert.deepEqual(migrated.extraJobs, []);
+  assert.deepEqual(migrated.attendances, []);
+  assert.deepEqual(migrated.attendanceAudit, []);
 });
 
 test('general weekly view is weekdays only while HOLMZ keeps seven days', () => {
@@ -85,7 +88,103 @@ test('budget calculation uses configured workplace wage and schedule hours', () 
   const d=normalizeData({students:[{id:'s1',name:'학생',site:'general',type:'국가근로'}],schedules:[{id:'w1',site:'general',studentId:'s1',studentName:'학생',kind:'weekly',weekday:1,start:'09:00',end:'11:00'}]});
   const semester=d.semesters[0];
   semester.startDate='2026-09-07'; semester.endDate='2026-09-07'; semester.budgets.general={total:100000,wage:9000,rates:{국가근로:10000}};
+  d.attendances.push({attendanceId:'a1',workInstanceId:'schedule:w1:2026-09-07',semesterId:semester.id,site:'general',studentId:'s1',scheduleId:'w1',sourceType:'schedule',workDate:'2026-09-07',scheduledStart:'09:00',scheduledEnd:'11:00',actualCheckIn:'2026-09-07T00:00:00.000Z',actualCheckOut:''});
   const result=calculateBudget(d,'general',semester.id,new Date('2026-09-07T12:00:00'));
   assert.equal(result.used,20000);
   assert.equal(result.remaining,80000);
+});
+
+test('confirmed extra work becomes an independent work instance while unconfirmed applications do not', () => {
+  const d=normalizeData({students:[{id:'s1',name:'학생',site:'general'}],extraJobs:[
+    {id:'j1',site:'general',date:'2026-09-15',start:'14:00',end:'17:00',capacity:2,status:'OPEN',applicants:[{studentId:'s1',name:'학생',status:'CONFIRMED'}]},
+    {id:'j2',site:'general',date:'2026-09-15',start:'18:00',end:'19:00',capacity:2,status:'OPEN',applicants:[{studentId:'s1',name:'학생',status:'APPLIED'}]}
+  ]});
+  const semester=d.semesters[0]; semester.startDate='2026-09-01'; semester.endDate='2026-09-30';
+  const items=eventsForDate(d,'general',new Date('2026-09-15T12:00:00'),semester.id,'s1');
+  assert.equal(items.length,1);
+  assert.equal(items[0].isExtraWork,true);
+  assert.equal(items[0].workInstanceId,'extra:j1:s1:2026-09-15');
+});
+
+test('early check-in is stored but recognized start remains the scheduled start', () => {
+  const event={workDate:'2026-09-07',start:'09:00',end:'12:00'};
+  const result=recognizedAttendance(event,{actualCheckIn:'2026-09-06T23:40:00.000Z',actualCheckOut:'2026-09-07T03:00:00.000Z'},new Date('2026-09-07T04:00:00.000Z'));
+  assert.equal(result.status,'COMPLETE');
+  assert.equal(result.minutes,180);
+  assert.equal(result.recognizedStart,'2026-09-07T00:00:00.000Z');
+});
+
+test('late check-in reduces recognized time without an invented rounding rule', () => {
+  const event={workDate:'2026-09-07',start:'09:00',end:'12:00'};
+  const result=recognizedAttendance(event,{actualCheckIn:'2026-09-07T00:17:00.000Z',actualCheckOut:''},new Date('2026-09-07T03:20:00.000Z'));
+  assert.equal(result.status,'COMPLETE');
+  assert.equal(result.minutes,163);
+});
+
+test('missing normal checkout automatically uses scheduled end after the shift', () => {
+  const event={workDate:'2026-09-07',start:'09:00',end:'12:00'};
+  const result=recognizedAttendance(event,{actualCheckIn:'2026-09-07T00:00:00.000Z',actualCheckOut:''},new Date('2026-09-07T03:01:00.000Z'));
+  assert.equal(result.status,'COMPLETE');
+  assert.equal(result.recognizedEnd,'2026-09-07T03:00:00.000Z');
+  assert.equal(result.minutes,180);
+});
+
+test('manual early checkout reduces recognized time and late checkout never creates overtime', () => {
+  const event={workDate:'2026-09-07',start:'09:00',end:'12:00'};
+  const early=recognizedAttendance(event,{actualCheckIn:'2026-09-07T00:00:00.000Z',actualCheckOut:'2026-09-07T02:00:00.000Z'},new Date('2026-09-07T04:00:00.000Z'));
+  const late=recognizedAttendance(event,{actualCheckIn:'2026-09-07T00:00:00.000Z',actualCheckOut:'2026-09-07T04:00:00.000Z'},new Date('2026-09-07T04:00:00.000Z'));
+  assert.equal(early.status,'EARLY_LEAVE');
+  assert.equal(early.minutes,120);
+  assert.equal(late.status,'COMPLETE');
+  assert.equal(late.minutes,180);
+});
+
+test('a past shift without check-in remains missing and receives no recognized time', () => {
+  const result=recognizedAttendance({workDate:'2026-09-07',start:'09:00',end:'12:00'},null,new Date('2026-09-07T04:00:00.000Z'));
+  assert.equal(result.status,'MISSING_CHECK_IN');
+  assert.equal(result.minutes,0);
+});
+
+test('multiple shifts on one day keep distinct attendance identities', () => {
+  const d=normalizeData({students:[{id:'s1',name:'학생',site:'general'}],schedules:[
+    {id:'am',site:'general',studentId:'s1',studentName:'학생',kind:'date',date:'2026-09-07',start:'08:30',end:'10:00'},
+    {id:'pm',site:'general',studentId:'s1',studentName:'학생',kind:'date',date:'2026-09-07',start:'15:00',end:'17:00'}
+  ]});
+  const semester=d.semesters[0]; semester.startDate='2026-09-01'; semester.endDate='2026-09-30';
+  const events=eventsForDate(d,'general',new Date('2026-09-07T12:00:00'),semester.id,'s1');
+  assert.notEqual(events[0].workInstanceId,events[1].workInstanceId);
+  d.attendances.push({attendanceId:'a',workInstanceId:events[0].workInstanceId,actualCheckIn:'2026-09-06T23:30:00.000Z'});
+  assert.equal(attendanceForEvent(d,events[0],events[0].workDate).attendanceId,'a');
+  assert.equal(attendanceForEvent(d,events[1],events[1].workDate),undefined);
+});
+
+test('time overlap validation catches extra work conflicts but permits adjacent shifts', () => {
+  const d=normalizeData({students:[{id:'s1',name:'학생',site:'general'}],schedules:[{id:'w1',site:'general',studentId:'s1',studentName:'학생',kind:'date',date:'2026-09-15',start:'14:00',end:'17:00'}]});
+  const semester=d.semesters[0]; semester.startDate='2026-09-01'; semester.endDate='2026-09-30';
+  assert.equal(hasTimeConflict(d,'s1','2026-09-15','15:00','18:00'),true);
+  assert.equal(hasTimeConflict(d,'s1','2026-09-15','17:00','18:00'),false);
+});
+
+test('student payload contains only own attendance and hides other applicant identities', () => {
+  const d=normalizeData({students:[{id:'s1',name:'학생1',site:'general'},{id:'s2',name:'학생2',site:'general'}],extraJobs:[{id:'j',site:'general',capacity:2,date:'2026-09-15',start:'09:00',end:'10:00',applicants:[{studentId:'s1',name:'학생1',status:'APPLIED'},{studentId:'s2',name:'학생2',status:'APPLIED'}]}],attendances:[{attendanceId:'a1',studentId:'s1'},{attendanceId:'a2',studentId:'s2'}]});
+  const visible=filterDataForStudent(d,{studentId:'s1'});
+  assert.deepEqual(visible.attendances.map(a=>a.attendanceId),['a1']);
+  assert.deepEqual(visible.extraJobs[0].applicants.map(a=>a.studentId),['s1']);
+  assert.equal(visible.extraJobs[0].applicantCount,2);
+  assert.deepEqual(visible.attendanceAudit,[]);
+});
+
+test('budget separates past recognized hours from future scheduled hours and includes confirmed extra work', () => {
+  const d=normalizeData({students:[{id:'s1',name:'학생',site:'general',type:'교내근로'}],schedules:[
+    {id:'past',site:'general',studentId:'s1',studentName:'학생',kind:'date',date:'2026-09-07',start:'09:00',end:'12:00'},
+    {id:'future',site:'general',studentId:'s1',studentName:'학생',kind:'date',date:'2026-09-09',start:'09:00',end:'11:00'}
+  ],extraJobs:[{id:'extra',site:'general',date:'2026-09-09',start:'14:00',end:'15:00',capacity:1,status:'CLOSED',applicants:[{studentId:'s1',name:'학생',status:'CONFIRMED'}]}]});
+  const semester=d.semesters[0];semester.startDate='2026-09-07';semester.endDate='2026-09-09';semester.budgets.general={total:100000,wage:10000,rates:{}};
+  d.attendances.push({attendanceId:'a',workInstanceId:'schedule:past:2026-09-07',studentId:'s1',actualCheckIn:'2026-09-07T00:00:00.000Z',actualCheckOut:'2026-09-07T02:00:00.000Z'});
+  const result=calculateBudget(d,'general',semester.id,new Date('2026-09-08T03:00:00.000Z'));
+  assert.equal(result.usedHours,2);
+  assert.equal(result.futureHours,3);
+  assert.equal(result.used,20000);
+  assert.equal(result.future,30000);
+  assert.equal(result.projected,50000);
 });

@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "settings": {"activeSemesterId":"semester-2026-2"},
   "semesters": [
     {"id":"semester-2026-2","name":"2026-2학기","startDate":"2026-09-01","endDate":"2027-02-28","active":true,"budgets":{"general":{"total":0,"wage":0},"holmz":{"total":0,"wage":0}}}
@@ -56,5 +56,8 @@
   "notices": [],
   "handovers": [],
   "swaps": [],
+  "extraJobs": [],
+  "attendances": [],
+  "attendanceAudit": [],
   "accounts": []
 }
