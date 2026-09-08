@@ -97,7 +97,7 @@ function validateBackup_(backup){if(!backup||backup.format!=='seoul-workstudent-
 function backupRawProperties_(folderId,expectedOwner){
   const folder=DriveApp.getFolderById(folderId);verifyPrivateAsset_(folder,expectedOwner);
   return withLock_(function(){const raw=PropertiesService.getScriptProperties().getProperties(),envelope={format:'seoul-script-properties-raw',schemaVersion:1,createdAt:new Date().toISOString(),checksum:checksum_(raw),properties:raw};
-    const file=folder.createFile('private-properties-'+Date.now()+'.json',JSON.stringify(envelope),'application/json');
+    const stamp=Utilities.formatDate(new Date(),'Asia/Seoul','yyyyMMdd-HHmmss'),file=folder.createFile('seoul-workstudent-premigration-v1-'+stamp+'.json',JSON.stringify(envelope),'application/json');
     verifyPrivateAsset_(file,expectedOwner);const check=JSON.parse(file.getBlob().getDataAsString());if(checksum_(check.properties)!==envelope.checksum)throw Error('원본 백업 검증 실패');
     return {fileId:file.getId(),checksum:envelope.checksum};
   });
@@ -106,7 +106,12 @@ function verifyPrivateAsset_(asset,owner){if(!owner||asset.getOwner().getEmail()
 function prepareLedger_(spreadsheetId,expectedOwner){
   verifyPrivateAsset_(DriveApp.getFileById(spreadsheetId),expectedOwner);
   if(PropertiesService.getScriptProperties().getProperty(LEDGER_POINTER)===spreadsheetId)throw Error('운영 원장은 초기 준비할 수 없습니다.');
-  const meta=ledgerCall_(spreadsheetId+'?fields=sheets.properties'),existing=meta.sheets.map(s=>s.properties.title),requests=[];
+  let meta=ledgerCall_(spreadsheetId+'?fields=sheets.properties'),existing=meta.sheets.map(s=>s.properties.title),requests=[];
+  if(meta.sheets.length===1&&existing.indexOf('students')===-1){
+    const initial=SpreadsheetApp.openById(spreadsheetId).getSheets()[0];
+    if(initial.getLastRow()||initial.getLastColumn())throw Error('기존 기본 시트가 비어 있지 않습니다. 새 빈 원장을 사용하세요.');
+    initial.setName('students');meta=ledgerCall_(spreadsheetId+'?fields=sheets.properties');existing=meta.sheets.map(s=>s.properties.title);
+  }
   LEDGER_TABLES.concat(['settings','metadata']).filter(n=>existing.indexOf(n)===-1).forEach((n,i)=>requests.push({addSheet:{properties:{title:n,gridProperties:{rowCount:1000,columnCount:40,frozenRowCount:1}}}}));
   if(requests.length)ledgerCall_(spreadsheetId+':batchUpdate','post',{requests});
   const ready=ledgerCall_(spreadsheetId+'?fields=sheets.properties');
@@ -116,7 +121,7 @@ function prepareLedger_(spreadsheetId,expectedOwner){
 }
 function rehearseMigration_(raw){
   const original=JSON.parse(raw),next=normalizeData_(original);next.requests=next.requests||[];
-  backfillAttendance_(next);validateLedger_(next);
+  rehearsalBackfillAttendance_(next);validateLedger_(next);
   const roundTrip=fromTables_(Object.fromEntries(Object.entries(tablesFor_(next)).map(([k,v])=>[k,recordsFromCells_(tableCells_(v))])));
   if(checksum_(roundTrip)!==checksum_(next))throw Error('원장 직렬화 검증 실패');
   return{data:next,original:integrity_(normalizeData_(original)),target:integrity_(next),uncertain:next.attendances.filter(a=>a.snapshotStatus==='REVIEW_REQUIRED').map(a=>a.attendanceId)};
