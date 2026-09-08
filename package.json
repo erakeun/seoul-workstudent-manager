@@ -5,7 +5,9 @@
   "private": true,
   "description": "서울 총무팀 근로장학생 관리 시스템 검토용 시안",
   "scripts": {
-    "test": "node --test",
+    "test": "node --test test/*.test.js",
+    "check": "node tools/check-syntax.mjs",
+    "preview:stability": "node tools/preview-server.mjs",
     "start": "python3 -m http.server 4173"
   }
 }

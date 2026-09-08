@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {source as allSource} from './helpers/runtime.js';
 
-const source=fs.readFileSync(new URL('../backend/Code.gs',import.meta.url),'utf8');
+const source=allSource();
 
 function backend(){
   const context={console,Date,JSON,String,Number,Array,Object,Math,RegExp,Error,Utilities:{getUuid:()=>`uuid-${Math.random()}`}};
@@ -30,7 +31,8 @@ test('Apps Script accepts an unlinked student in admin and viewer data', () => {
   app.data_=()=>current;
   let saved;
   app.saveData_=next=>{saved=next;};
-  const result=app.adminSaveData_('token',{...current,students:current.students.concat({id:'unlinked',name:'미연결 학생',site:'general',type:'교내근로',active:true})});
+  assert.throws(()=>app.adminSaveData_('token',current),/전체 상태 저장은 폐기/);
+  const result=app.adminMutate_('token',[{entity:'students',id:'unlinked',operation:'upsert',expectedRevision:0,fields:{name:'미연결 학생',site:'general',type:'교내근로',active:true}}]);
   assert.equal(result.ok,true);
   assert.ok(saved.students.some(student=>student.id==='unlinked'));
   assert.ok(!saved.accounts.some(account=>account.studentId==='unlinked'));
