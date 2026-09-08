@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { attendanceForEvent, calculateBudget, eventsForDate, filterDataForStudent, hasTimeConflict, lanes, normalizeData, recognizedAttendance, scheduleOccursOn, statusFor, visibleWeekdays } from '../app.js';
+import { attendanceForEvent, calculateBudget, eventsForDate, filterDataForStudent, handoverNotesForSite, hasTimeConflict, lanes, normalizeData, recognizedAttendance, scheduleOccursOn, statusFor, visibleWeekdays } from '../app.js';
 
 const data = { schedules: [
   { id: 'monday', site: 'general', studentName: '권기재', kind: 'weekly', weekday: 1, start: '08:30', end: '12:00' },
@@ -36,6 +36,17 @@ test('legacy data migrates without deleting existing records', () => {
   assert.deepEqual(migrated.extraJobs, []);
   assert.deepEqual(migrated.attendances, []);
   assert.deepEqual(migrated.attendanceAudit, []);
+  assert.deepEqual(migrated.handoverNotes, []);
+});
+
+test('handover notes are newest first and stay within the student workplace payload', () => {
+  const d=normalizeData({students:[{id:'g1',name:'총무 학생',site:'general'},{id:'h1',name:'HOLMZ 학생',site:'holmz'}],handoverNotes:[
+    {id:'old',site:'general',authorUserId:'g1',authorName:'총무 학생',content:'먼저 작성',createdAt:'2026-09-07T01:00:00.000Z'},
+    {id:'new',site:'general',authorUserId:'g1',authorName:'총무 학생',content:'나중 작성',createdAt:'2026-09-07T02:00:00.000Z'},
+    {id:'other',site:'holmz',authorUserId:'h1',authorName:'HOLMZ 학생',content:'다른 근무지',createdAt:'2026-09-07T03:00:00.000Z'}
+  ]});
+  assert.deepEqual(handoverNotesForSite(d,'general').map(x=>x.id),['new','old']);
+  assert.deepEqual(filterDataForStudent(d,{studentId:'g1'}).handoverNotes.map(x=>x.id),['old','new']);
 });
 
 test('general weekly view is weekdays only while HOLMZ keeps seven days', () => {
