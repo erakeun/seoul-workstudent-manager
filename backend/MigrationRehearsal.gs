@@ -29,6 +29,14 @@ function runCandidateReadWriteRoundTrip(){
     return rehearsalLog_('ROUND_TRIP',{changedReadback:true,restored:true,beforeChecksum:beforeChecksum,restoredChecksum:restoredChecksum,writeMs:writeMs,restoreMs:restoreMs});
   });
 }
+function runCandidateConcurrencyWriterA(){return candidateConcurrencyWriter_('A');}
+function runCandidateConcurrencyWriterB(){return candidateConcurrencyWriter_('B');}
+function candidateConcurrencyWriter_(label){
+  return withLock_(function(){const loaded=readLedger_(REHEARSAL_SPREADSHEET_ID),next=copy_(loaded.data),token=Utilities.getUuid();next.rehearsalConcurrency=Object.assign({},next.rehearsalConcurrency||{});next.rehearsalConcurrency[label]={token:token,createdAt:new Date().toISOString()};Utilities.sleep(1800);writeLedger_(REHEARSAL_SPREADSHEET_ID,loaded.data,next,loaded.sheets);return rehearsalLog_('CONCURRENCY_'+label,{writer:label,token:token,retained:Object.keys(readLedger_(REHEARSAL_SPREADSHEET_ID).data.rehearsalConcurrency||{}).sort()});});
+}
+function verifyAndRestoreCandidateConcurrency(){
+  return withLock_(function(){const loaded=readLedger_(REHEARSAL_SPREADSHEET_ID),retained=Object.keys(loaded.data.rehearsalConcurrency||{}).sort(),next=copy_(loaded.data);delete next.rehearsalConcurrency;writeLedger_(REHEARSAL_SPREADSHEET_ID,loaded.data,next,loaded.sheets);const restored=readLedger_(REHEARSAL_SPREADSHEET_ID).data,raw=PropertiesService.getScriptProperties().getProperty(DATA_KEY),expected=rehearseMigration_(raw).data;expected.migrationSourceChecksum=checksum_(raw);const result={retained:retained,bothRetained:canonical_(retained)===canonical_(['A','B']),restored:checksum_(restored)===checksum_(expected)};if(!result.bothRetained||!result.restored)throw Error('실제 Sheets Lost Update/복원 검증 실패');return rehearsalLog_('CONCURRENCY_VERIFY',result);});
+}
 function verifyPastAttendanceImmutability(){
   const original=normalizeData_(JSON.parse(PropertiesService.getScriptProperties().getProperty(DATA_KEY))),target=readLedger_(REHEARSAL_SPREADSHEET_ID).data,fields=['attendanceId','workInstanceId','semesterId','site','studentId','scheduleId','sourceType','workDate','scheduledStart','scheduledEnd','actualCheckIn','actualCheckOut','checkoutType','correctedByAdmin','createdAt','updatedAt'],mismatches=[];
   original.attendances.forEach(a=>{const b=target.attendances.find(x=>(x.attendanceId||x.id)===(a.attendanceId||a.id));if(!b||fields.some(k=>canonical_(a[k])!==canonical_(b[k])))mismatches.push(a.attendanceId||a.id);});
