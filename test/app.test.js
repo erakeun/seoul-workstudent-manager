@@ -139,6 +139,14 @@ test('manual early checkout reduces recognized time and late checkout never crea
   assert.equal(late.minutes,180);
 });
 
+test('an absence record remains distinct from a missing check-in and has no recognized time', () => {
+  const event={workDate:'2026-09-07',start:'09:00',end:'12:00'};
+  const result=recognizedAttendance(event,{checkoutType:'ABSENT'},new Date('2026-09-07T04:00:00.000Z'));
+  assert.equal(result.status,'ABSENT');
+  assert.equal(result.minutes,0);
+  assert.equal(result.inProgress,false);
+});
+
 test('a past shift without check-in remains missing and receives no recognized time', () => {
   const result=recognizedAttendance({workDate:'2026-09-07',start:'09:00',end:'12:00'},null,new Date('2026-09-07T04:00:00.000Z'));
   assert.equal(result.status,'MISSING_CHECK_IN');
