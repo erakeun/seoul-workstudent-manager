@@ -107,9 +107,10 @@ function recognizedMinutes_(a,now){if(a.checkoutType==='ABSENT')return 0;if(!a.a
 function backfillAttendance_(data){
   data.attendances.forEach(a=>{
     if(!a.snapshot){
-      if(!a.studentId||!a.semesterId||!a.site||!/^\d{4}-\d{2}-\d{2}$/.test(a.workDate)||!validTime_(a.scheduledStart)||!validTime_(a.scheduledEnd)){a.snapshotStatus='REVIEW_REQUIRED';return;}
+      if(!a.studentId||!a.semesterId||!a.site||!/^\d{4}-\d{2}-\d{2}$/.test(a.workDate)||!validTime_(a.scheduledStart)||!validTime_(a.scheduledEnd)||minutes_(a.scheduledEnd)<=minutes_(a.scheduledStart)||(a.actualCheckIn&&!Number.isFinite(Date.parse(a.actualCheckIn)))||(a.actualCheckOut&&!Number.isFinite(Date.parse(a.actualCheckOut)))){a.snapshotStatus='REVIEW_REQUIRED';return;}
       // Only persisted attendance facts are authoritative. Never infer historic worker/site/time from today's schedule.
-      a.snapshot={id:a.scheduleId||a.workInstanceId,studentId:a.studentId,studentName:a.studentName||a.studentId,semesterId:a.semesterId,site:a.site,workDate:a.workDate,start:a.scheduledStart,end:a.scheduledEnd,sourceType:a.sourceType,isExtraWork:a.sourceType==='extra',isSubstitute:!!a.isSubstitute};
+      a.snapshot={id:a.scheduleId||a.workInstanceId,studentId:a.studentId,studentName:a.studentName||a.studentId,semesterId:a.semesterId,site:a.site,workDate:a.workDate,start:a.scheduledStart,end:a.scheduledEnd,sourceType:a.sourceType,isExtraWork:a.sourceType==='extra',substitutionStatus:a.isSubstitute===undefined?'UNKNOWN_LEGACY':'RECORDED'};
+      if(a.isSubstitute!==undefined)a.snapshot.isSubstitute=!!a.isSubstitute;
       a.snapshotVersion=1;a.snapshotStatus='RECORDED_FACTS';
     }
     if(a.recognizedMinutes===undefined||a.recognizedMinutes===null)a.recognizedMinutes=recognizedMinutes_(a,new Date());

@@ -57,3 +57,6 @@ GitHub Pages의 **Deploy from a branch**에서 기본 브랜치와 `/(root)`를 
 - 대타 확정 권한과 실제 지급·근무 인정 기준
 - 출근 허용 시간 범위, 휴게시간, 분 단위 처리·반올림, 확정 추가근무 취소 절차
 - 개인정보 보존 기간, 접근 담당자, 정기 백업 주기
+# 미배포 안정화 브랜치 안내
+
+현재 작업 브랜치의 V5 코드는 Production 전환 전 검증 후보입니다. 원본 백업 및 Sheets 실제 리허설이 완료되지 않았으므로 main push나 운영 Apps Script 교체를 하지 마세요. [전환 Gate와 운영 Runbook](docs/PRODUCTION-RUNBOOK.md)을 먼저 확인하세요.

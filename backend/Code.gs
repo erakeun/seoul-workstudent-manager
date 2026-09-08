@@ -1,4 +1,4 @@
-/** 서울 근로장학생 관리 API v4 — 기존 swtm2 데이터에 하위 호환 필드만 추가합니다. */
+/** 서울 근로장학생 관리 API V5 candidate — Sheets transactions; swtm2 is read-only legacy. */
 const DATA_KEY = 'swtm2';
 const SESSION_PREFIX = 'sess_';
 const SESSION_HOURS = 24;
