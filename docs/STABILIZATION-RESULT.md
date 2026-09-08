@@ -2,9 +2,9 @@
 
 작성일: 2026-09-08 / 기준 main: `42a4ccc86aca8fb9bb6a3df83ae87061264e523b`
 
-**중간 인계 보고: 로컬 후보 준비 완료, Production 전환 중단. 안정화 완료 보고가 아닙니다.**
+**중간 인계 보고: 로컬 후보와 실제 Google Sheets migration rehearsal까지 완료, Production 전환은 중단. 안정화 완료 보고가 아닙니다.**
 
-운영 데이터/Script Properties/Drive/Apps Script 코드·배포/main/Pages를 수정하지 않았습니다. 로컬 `stabilization/production-safety` 브랜치에만 구현·테스트·문서를 보관했습니다. 기존 GitHub 저장소/소유권/URL은 그대로입니다.
+운영 `swtm2`와 기존 Web App 배포/main/Pages는 수정하지 않았습니다. Apps Script HEAD에만 owner-run 백업/리허설 helper와 Google Sheets API 서비스를 추가했고, 후보 Sheets에만 스키마·이관 데이터를 작성했습니다. 실환경 결과는 `docs/PRODUCTION-MIGRATION-REHEARSAL-2026-09-08.md`를 기준으로 합니다.
 
 ## ■ 최종 판정
 
