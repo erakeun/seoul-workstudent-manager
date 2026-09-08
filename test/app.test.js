@@ -193,6 +193,56 @@ test('student payload contains only own attendance and hides other applicant ide
   assert.deepEqual(visible.attendanceAudit,[]);
 });
 
+test('student weekly data contains same-site actual workers but excludes other sites', () => {
+  const d=normalizeData({students:[
+    {id:'s1',name:'학생 A',site:'general'},
+    {id:'s2',name:'학생 B',site:'general'},
+    {id:'s3',name:'학생 C',site:'general'},
+    {id:'h1',name:'HOLMZ 학생',site:'holmz'}
+  ],schedules:[
+    {id:'mine',site:'general',studentId:'s1',studentName:'학생 A',kind:'date',date:'2026-09-08',start:'09:00',end:'11:00'},
+    {id:'coworker',site:'general',studentId:'s2',studentName:'학생 B',kind:'date',date:'2026-09-08',start:'09:00',end:'12:00'},
+    {id:'cancelled',site:'general',studentId:'s3',studentName:'학생 C',kind:'date',date:'2026-09-08',start:'13:00',end:'14:00'},
+    {id:'other-site',site:'holmz',studentId:'h1',studentName:'HOLMZ 학생',kind:'date',date:'2026-09-08',start:'09:00',end:'10:00'}
+  ],exceptions:[
+    {id:'cancel',site:'general',type:'cancel',scheduleId:'cancelled',studentId:'s3',date:'2026-09-08'}
+  ],swaps:[
+    {id:'swap',site:'general',scheduleId:'mine',date:'2026-09-08',status:'대타확정',assigneeId:'s3',assigneeName:'학생 C'}
+  ],extraJobs:[
+    {id:'extra',site:'general',date:'2026-09-08',start:'15:00',end:'16:00',status:'OPEN',applicants:[{studentId:'s2',name:'학생 B',status:'CONFIRMED'}]},
+    {id:'other-extra',site:'holmz',date:'2026-09-08',start:'15:00',end:'16:00',status:'OPEN',applicants:[{studentId:'h1',name:'HOLMZ 학생',status:'CONFIRMED'}]}
+  ]});
+  const semester=d.semesters[0];semester.startDate='2026-09-01';semester.endDate='2026-09-30';
+  const visible=filterDataForStudent(d,{studentId:'s1'});
+  const events=eventsForDate(visible,'general',new Date('2026-09-08T12:00:00'),semester.id);
+  assert.deepEqual(events.map(x=>x.studentName),['학생 B','학생 C','학생 B']);
+  assert.equal(events[1].isSubstitute,true);
+  assert.equal(events[2].isExtraWork,true);
+  assert.ok(events.every(x=>x.site==='general'));
+  assert.ok(!events.some(x=>x.id==='cancelled'));
+  assert.ok(!JSON.stringify(visible).includes('HOLMZ 학생'));
+});
+
+test('student payload exposes only sanitized same-site absence markers for coworkers', () => {
+  const d=normalizeData({students:[
+    {id:'s1',name:'학생 A',site:'general'},
+    {id:'s2',name:'학생 B',site:'general'},
+    {id:'h1',name:'HOLMZ 학생',site:'holmz'}
+  ],attendances:[
+    {attendanceId:'own',studentId:'s1',site:'general',workInstanceId:'schedule:mine:2026-09-08',checkoutType:'',actualCheckIn:'2026-09-08T00:00:00.000Z'},
+    {attendanceId:'coworker',studentId:'s2',site:'general',workInstanceId:'schedule:coworker:2026-09-08',workDate:'2026-09-08',checkoutType:'ABSENT',absenceReason:'민감한 관리자 메모',absenceMarkedByName:'관리자'},
+    {attendanceId:'other-site',studentId:'h1',site:'holmz',workInstanceId:'schedule:other:2026-09-08',workDate:'2026-09-08',checkoutType:'ABSENT',absenceReason:'다른 근무지'}
+  ]});
+  const visible=filterDataForStudent(d,{studentId:'s1'});
+  assert.equal(visible.attendances.length,2);
+  assert.equal(visible.attendances.find(x=>x.studentId==='s1').attendanceId,'own');
+  const coworker=visible.attendances.find(x=>x.studentId==='s2');
+  assert.equal(coworker.checkoutType,'ABSENT');
+  assert.equal(coworker.absenceReason,undefined);
+  assert.equal(coworker.absenceMarkedByName,undefined);
+  assert.ok(!visible.attendances.some(x=>x.studentId==='h1'));
+});
+
 test('budget separates past recognized hours from future scheduled hours and includes confirmed extra work', () => {
   const d=normalizeData({students:[{id:'s1',name:'학생',site:'general',type:'교내근로'}],schedules:[
     {id:'past',site:'general',studentId:'s1',studentName:'학생',kind:'date',date:'2026-09-07',start:'09:00',end:'12:00'},
