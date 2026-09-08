@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { attendanceForEvent, calculateBudget, eventsForDate, filterDataForStudent, handoverNotesForSite, hasTimeConflict, lanes, normalizeData, recognizedAttendance, scheduleOccursOn, statusFor, visibleWeekdays } from '../app.js';
+import { attendanceForEvent, calculateBudget, composeStudentDashboardFlow, eventsForDate, filterDataForStudent, handoverNotesForSite, hasTimeConflict, lanes, linkedStudentAccount, normalizeData, recognizedAttendance, renderHandoverNotePanel, scheduleOccursOn, statusFor, visibleWeekdays } from '../app.js';
 
 const data = { schedules: [
   { id: 'monday', site: 'general', studentName: '권기재', kind: 'weekly', weekday: 1, start: '08:30', end: '12:00' },
@@ -47,6 +47,47 @@ test('handover notes are newest first and stay within the student workplace payl
   ]});
   assert.deepEqual(handoverNotesForSite(d,'general').map(x=>x.id),['new','old']);
   assert.deepEqual(filterDataForStudent(d,{studentId:'g1'}).handoverNotes.map(x=>x.id),['old','new']);
+});
+
+test('student dashboard renders the empty handover note card between today and weekly schedule', () => {
+  const notePanel=renderHandoverNotePanel({handoverNotes:[]},{id:'user-a',role:'student'},'general');
+  const html=composeStudentDashboardFlow('<article data-dashboard-section="today">오늘</article>',notePanel,'<article data-dashboard-section="week">주간</article>','<article data-dashboard-section="month">월간</article>');
+  assert.match(notePanel,/data-dashboard-section="handover-notes"/);
+  assert.match(notePanel,/id="handover-note-form"/);
+  assert.match(notePanel,/아직 공유된 메모가 없습니다/);
+  assert.match(notePanel,/다음 근무자에게 전달할 내용이 있다면 남겨주세요/);
+  assert.ok(html.indexOf('data-dashboard-section="today"')<html.indexOf('data-dashboard-section="handover-notes"'));
+  assert.ok(html.indexOf('data-dashboard-section="handover-notes"')<html.indexOf('data-dashboard-section="week"'));
+  assert.ok(html.indexOf('data-dashboard-section="week"')<html.indexOf('data-dashboard-section="month"'));
+});
+
+test('handover note controls follow student ownership, admin, and viewer roles', () => {
+  const data={handoverNotes:[
+    {id:'mine',site:'general',authorUserId:'user-a',authorName:'학생 A',content:'<script>alert(1)</script>',createdAt:'2026-09-08T07:00:00.000Z'},
+    {id:'other',site:'general',authorUserId:'user-b',authorName:'학생 B',content:'전달 사항',createdAt:'2026-09-08T08:00:00.000Z'}
+  ]};
+  const student=renderHandoverNotePanel(data,{id:'user-a',role:'student'},'general');
+  const admin=renderHandoverNotePanel(data,{id:'admin',role:'admin'},'general');
+  const viewer=renderHandoverNotePanel(data,{id:'viewer',role:'viewer'},'general');
+  assert.equal((student.match(/data-delete-handover-note=/g)||[]).length,1);
+  assert.equal((admin.match(/data-delete-handover-note=/g)||[]).length,2);
+  assert.equal((viewer.match(/data-delete-handover-note=/g)||[]).length,0);
+  assert.match(student,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(student,/<script>/);
+  assert.match(viewer,/조회자 계정은 메모를 열람만 할 수 있습니다/);
+  assert.doesNotMatch(viewer,/id="handover-note-form"/);
+});
+
+test('students remain schedulable without accounts and can be linked later without changing their record', () => {
+  const d=normalizeData({students:[{id:'unlinked',name:'미연결 학생',site:'general'}],schedules:[{id:'shift',site:'general',studentId:'unlinked',studentName:'미연결 학생',kind:'date',date:'2026-09-08',start:'09:00',end:'10:00'}],accounts:[]});
+  const semester=d.semesters[0];semester.startDate='2026-09-01';semester.endDate='2026-09-30';
+  assert.equal(linkedStudentAccount(d.accounts,'unlinked'),undefined);
+  assert.equal(eventsForDate(d,'general',new Date('2026-09-08T12:00:00'),semester.id)[0].studentId,'unlinked');
+  const studentBefore=JSON.stringify(d.students[0]),scheduleBefore=JSON.stringify(d.schedules[0]);
+  d.accounts.push({id:'account',username:'student',name:'미연결 학생',role:'student',studentId:'unlinked',active:true});
+  assert.equal(linkedStudentAccount(d.accounts,'unlinked').id,'account');
+  assert.equal(JSON.stringify(d.students[0]),studentBefore);
+  assert.equal(JSON.stringify(d.schedules[0]),scheduleBefore);
 });
 
 test('general weekly view is weekdays only while HOLMZ keeps seven days', () => {
