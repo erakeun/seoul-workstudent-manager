@@ -43,6 +43,7 @@ function verifyPastAttendanceImmutability(){
   return rehearsalLog_('ATTENDANCE_IMMUTABILITY',{sourceCount:original.attendances.length,targetCount:target.attendances.length,unchanged:mismatches.length===0,mismatchCount:mismatches.length});
 }
 function verifyKstUtcInAppsScript(){const samples=[['2026-09-08','00:00','2026-09-07T15:00:00.000Z'],['2026-12-31','24:00','2026-12-31T15:00:00.000Z']];const results=samples.map(s=>{const date=dateTime_(s[0],s[1]),roundTrip=Utilities.formatDate(date,TIMEZONE,'yyyy-MM-dd HH:mm');return{input:s[0]+' '+s[1],iso:date.toISOString(),roundTrip:roundTrip,pass:date.toISOString()===s[2]};});return rehearsalLog_('KST_UTC',{timezone:TIMEZONE,pass:results.every(r=>r.pass),results:results});}
+function verifyCurrentSessionRevokeBoundary(){const props=PropertiesService.getScriptProperties().getProperties(),keys=Object.keys(props).filter(k=>k.indexOf(SESSION_PREFIX)===0),sessions=[],invalid=[];keys.forEach(k=>{try{sessions.push(JSON.parse(props[k]));}catch(_){invalid.push(k);}});const result={currentSessionCount:keys.length,parseableCount:sessions.length,invalidCount:invalid.length,allCurrentSessionsRejectedByV5:sessions.every(s=>s.authVersion===undefined),mutationPerformed:false};return rehearsalLog_('SESSION_BOUNDARY',result);}
 function rehearsalBackfillAttendance_(data){
   const valid=t=>/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(t)||t==='24:00';
   data.attendances.forEach(a=>{
