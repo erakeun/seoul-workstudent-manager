@@ -117,7 +117,10 @@ function prepareLedger_(spreadsheetId,expectedOwner){
   const ready=ledgerCall_(spreadsheetId+'?fields=sheets(properties,protectedRanges(description,warningOnly,range))');
   // Warning-only protection: does not lock out the owner/execution identity.
   const protectionDescription='시스템 원장: ID/헤더/JSON/인증정보 직접 수정 금지. 앱에서 변경하세요.',protectionRequests=ready.sheets.filter(function(s){
-    return LEDGER_TABLES.concat(['settings','metadata']).indexOf(s.properties.title)!==-1&&!(s.protectedRanges||[]).some(function(p){return p.description===protectionDescription&&p.warningOnly&&p.range&&p.range.sheetId===s.properties.sheetId;});
+    // protectedRanges is already nested under its owning sheet.  Some Sheets API
+    // responses omit range.sheetId, so requiring it would re-add an identical
+    // warning on every idempotent prepare run and the API rejects the duplicate.
+    return LEDGER_TABLES.concat(['settings','metadata']).indexOf(s.properties.title)!==-1&&!(s.protectedRanges||[]).some(function(p){return p.description===protectionDescription&&p.warningOnly;});
   }).map(s=>({addProtectedRange:{protectedRange:{range:{sheetId:s.properties.sheetId},description:protectionDescription,warningOnly:true}}}));
   if(protectionRequests.length)ledgerCall_(spreadsheetId+':batchUpdate','post',{requests:protectionRequests});
   return{spreadsheetId,prepared:true};
