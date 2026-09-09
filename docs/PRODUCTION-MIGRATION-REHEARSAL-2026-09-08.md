@@ -1,5 +1,8 @@
 # Production migration rehearsal — 2026-09-08
 
+> Historical pre-cutover report. The completed V5 Production Gate and cutover
+> are recorded in `V5-PRODUCTION-CUTOVER-2026-09-09.md`.
+
 이 문서는 `stabilization/production-safety` 브랜치에서 실제 Google Drive, Google Sheets, Apps Script를 사용한 검증 증거다. Production Source of Truth는 계속 Script Properties `swtm2`이다. `swtm_ledger_v5` 운영 포인터, 기존 Web App 배포, main, Pages는 변경하지 않았다.
 
 ## 실제 자산과 백업
