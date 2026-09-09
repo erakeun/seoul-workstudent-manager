@@ -63,7 +63,7 @@ const MUTABLE_FIELDS={
  students:['name','site','type','studentNumber','phone','email','color','active','semesterIds','participationEndDates','inactiveFrom'],
  schedules:['semesterId','site','studentId','studentName','periodType','kind','weekday','date','start','end','effectiveFrom','effectiveUntil'],
  exceptions:['semesterId','site','type','date','scheduleId','studentId','studentName','start','end','reason'],
- notices:['semesterId','site','title','content','url','important','author','createdAt'],
+ notices:['semesterId','site','title','content','url','important','author','createdAt','requiresRead'],
  handovers:['semesterId','site','title','content','url','important','author','createdAt'],
  semesters:['name','startDate','endDate','termEndDate','vacationStartDate','vacationHours','termWeeklyLimit','vacationWeeklyLimit','mixedWeekPolicy','budgets','active'],settings:['activeSemesterId']
 };

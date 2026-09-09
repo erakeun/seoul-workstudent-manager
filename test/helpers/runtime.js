@@ -16,10 +16,10 @@ export function runtime(source, initial=fixture()) {
 }
 export function source(){return fs.readdirSync(new URL('../../backend/',import.meta.url)).filter(f=>f.endsWith('.gs')).sort().map(f=>fs.readFileSync(new URL('../../backend/'+f,import.meta.url),'utf8')).join('\n');}
 export function staged(initial=fixture()){
- const r=runtime(source(),initial);let ledger=r.app.normalizeData_(initial);ledger.requests=[];
+ const r=runtime(source(),initial);let ledger=r.app.ensurePlanningData_(r.app.normalizeData_(initial));ledger.requests=[];
  r.props.set('swtm_ledger_v5','isolated-ledger');
  r.app.readLedger_=()=>({data:clone(ledger),sheets:{}});
- r.app.writeLedger_=(_id,before,next)=>{if(r.failWrite)throw Error('simulated server write failure');if(JSON.stringify(before)!==JSON.stringify(ledger))throw Error('stale server transaction');ledger=clone(next);r.stats.writes++;};
+ r.app.writeLedger_=(_id,before,next)=>{if(r.failWrite)throw Error('simulated server write failure');if(r.app.canonical_(before)!==r.app.canonical_(ledger))throw Error('stale server transaction');ledger=clone(next);r.stats.writes++;};
  r.ledger=()=>clone(ledger);r.replaceLedger=x=>{ledger=clone(x);};
  r.request=(action,payload={},id)=>r.app.handle_({action,token:r.adminToken,...payload,clientVersion:5,requestId:id||'1788825600000:'+crypto.randomUUID()});
  r.adminToken=r.session();r.studentToken=r.session('ua');r.viewerToken=r.session('viewer');return r;

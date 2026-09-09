@@ -3,7 +3,7 @@
  * Each entity is a row with field columns, not one database JSON cell.
  */
 const LEDGER_POINTER = 'swtm_ledger_v5';
-const LEDGER_TABLES = ['students','accounts','semesters','schedules','exceptions','attendances','attendanceAudit','budgetAudit','extraJobs','swaps','notices','handovers','handoverNotes','requests'];
+const LEDGER_TABLES = ['students','accounts','semesters','schedules','exceptions','attendances','attendanceAudit','budgetAudit','extraJobs','swaps','notices','handovers','handoverNotes','classSchedules','workPreferences','scheduleDrafts','requests'];
 var transaction_ = null;
 var lockDepth_ = 0;
 function canonical_(value) {
@@ -20,6 +20,7 @@ function ledgerCall_(path,method,body){
 }
 function ledgerId_(){const id=PropertiesService.getScriptProperties().getProperty(LEDGER_POINTER);if(!id)throw Error('V5 원장 전환이 완료되지 않았습니다. 운영 담당자에게 문의하세요.');return id;}
 function tablesFor_(data){
+  data=ensurePlanningData_(copy_(data));
   const tables={};LEDGER_TABLES.forEach(k=>tables[k]=copy_(data[k]||[]));
   tables.settings=Object.keys(data.settings||{}).sort().map(key=>({key,value:data.settings[key]}));
   tables.metadata=Object.keys(data).filter(k=>k!=='settings'&&LEDGER_TABLES.indexOf(k)===-1).sort().map(key=>({key,value:data[key]}));
@@ -69,12 +70,13 @@ function writeLedger_(id,before,next,sheets){
   ledgerCall_(id+':batchUpdate','post',{requests});
 }
 function validateLedger_(data){
+  data=ensurePlanningData_(copy_(data));
   const ids={};LEDGER_TABLES.forEach(k=>{if(!Array.isArray(data[k]))throw Error(k+' 테이블 누락');ids[k]=new Set();data[k].forEach(r=>{const id=r.id||r.attendanceId;if(!id||ids[k].has(id))throw Error(k+' ID 누락 또는 중복');ids[k].add(id);});});
   const ref=(table,id,where)=>{if(id&&!ids[table].has(id))throw Error(where+' 참조 누락');};
   data.accounts.forEach(r=>{ref('students',r.studentId,'계정-학생');if(r.role==='student'&&!r.studentId)throw Error('학생 계정 연결 누락');});
   if(!data.accounts.some(a=>a.role==='admin'&&a.active))throw Error('활성 Admin은 최소 1명 필요합니다.');
   ref('semesters',data.settings.activeSemesterId,'운영 학기');
-  ['schedules','exceptions','attendances','extraJobs','swaps'].forEach(k=>data[k].forEach(r=>{ref('semesters',r.semesterId,k);ref('students',r.studentId,k);}));
+  ['schedules','exceptions','attendances','extraJobs','swaps','classSchedules','workPreferences','scheduleDrafts'].forEach(k=>data[k].forEach(r=>{ref('semesters',r.semesterId,k);ref('students',r.studentId,k);}));
   data.students.forEach(s=>(s.semesterIds||[]).forEach(id=>ref('semesters',id,'학생 참여 학기')));
   data.swaps.forEach(r=>{ref('students',r.requesterStudentId,'대타 요청자');ref('students',r.assigneeId,'대타 근무자');(r.applicants||[]).forEach(a=>ref('students',a.studentId,'대타 신청'));});
   data.extraJobs.forEach(r=>(r.applicants||[]).forEach(a=>ref('students',a.studentId,'추가근무 신청')));
@@ -89,7 +91,7 @@ function stageStoredData_(data){if(!transaction_)throw Error('쓰기 트랜잭�
 
 /** Backup envelope deliberately excludes session tokens; raw properties backup is separate. */
 function backupEnvelope_(data){return{format:'seoul-workstudent-full',schemaVersion:5,createdAt:new Date().toISOString(),excluded:['sessions'],photoPolicy:'private Drive files retained; links only, not image bytes',integrity:integrity_(data),data:copy_(data)};}
-function validateBackup_(backup){if(!backup||backup.format!=='seoul-workstudent-full'||backup.schemaVersion!==5)throw Error('지원하지 않는 백업 버전입니다.');if(checksum_(backup.data)!==backup.integrity.checksum)throw Error('백업 체크섬이 일치하지 않습니다.');const needsUpgrade=!Array.isArray(backup.data.budgetAudit)||(backup.data.semesters||[]).some(function(s){return s.termWeeklyLimit===undefined||s.vacationWeeklyLimit===undefined;})||(backup.data.schedules||[]).some(function(s){return s.periodType===undefined;}),restored=needsUpgrade?normalizeData_(backup.data):copy_(backup.data);validateLedger_(restored);return restored;}
+function validateBackup_(backup){if(!backup||backup.format!=='seoul-workstudent-full'||backup.schemaVersion!==5)throw Error('지원하지 않는 백업 버전입니다.');if(checksum_(backup.data)!==backup.integrity.checksum)throw Error('백업 체크섬이 일치하지 않습니다.');const needsUpgrade=!Array.isArray(backup.data.budgetAudit)||(backup.data.semesters||[]).some(function(s){return s.termWeeklyLimit===undefined||s.vacationWeeklyLimit===undefined;})||(backup.data.schedules||[]).some(function(s){return s.periodType===undefined;})||!Array.isArray(backup.data.classSchedules)||!Array.isArray(backup.data.workPreferences)||!Array.isArray(backup.data.scheduleDrafts),restored=ensurePlanningData_(needsUpgrade?normalizeData_(backup.data):copy_(backup.data));validateLedger_(restored);return restored;}
 
 /** Owner-only editor helpers: trailing underscore prevents google.script.run access.
  * No helper is routed by the public web API. IDs/owners are explicit, not guessed.
@@ -125,8 +127,16 @@ function prepareLedger_(spreadsheetId,expectedOwner){
   if(protectionRequests.length)ledgerCall_(spreadsheetId+':batchUpdate','post',{requests:protectionRequests});
   return{spreadsheetId,prepared:true};
 }
+/** Idempotent schema extension for the active ledger. Run before publishing this code. */
+function upgradeProductionLedgerSchema(){
+  const id=ledgerId_(),required=['classSchedules','workPreferences','scheduleDrafts'],meta=ledgerCall_(id+'?fields=sheets.properties'),existing=meta.sheets.map(s=>s.properties.title);
+  const requests=required.filter(n=>existing.indexOf(n)===-1).map(n=>({addSheet:{properties:{title:n,gridProperties:{rowCount:1000,columnCount:40,frozenRowCount:1}}}}));
+  if(requests.length)ledgerCall_(id+':batchUpdate','post',{requests:requests});
+  const ready=ledgerCall_(id+'?fields=sheets.properties'),names=ready.sheets.map(s=>s.properties.title);
+  return{spreadsheetId:id,created:required.filter(n=>existing.indexOf(n)===-1),ready:required.every(n=>names.indexOf(n)!==-1)};
+}
 function rehearseMigration_(raw){
-  const original=JSON.parse(raw),next=normalizeData_(original);next.requests=next.requests||[];
+  const original=JSON.parse(raw),next=ensurePlanningData_(normalizeData_(original));next.requests=next.requests||[];
   rehearsalBackfillAttendance_(next);validateLedger_(next);
   const roundTrip=fromTables_(Object.fromEntries(Object.entries(tablesFor_(next)).map(([k,v])=>[k,recordsFromCells_(tableCells_(v))])));
   if(checksum_(roundTrip)!==checksum_(next))throw Error('원장 직렬화 검증 실패');

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {runtime,source,fixture,clone,staged} from './helpers/runtime.js';
 import {sheetsDouble} from './helpers/sheets.js';
-function setup(){const r=runtime(source()),d=r.app.normalizeData_(fixture());d.requests=[];return{...r,d};}
+function setup(){const r=runtime(source()),d=r.app.ensurePlanningData_(r.app.normalizeData_(fixture()));d.requests=[];return{...r,d};}
 test('record/field tables preserve IDs, nested data, dates, quotes, formula text and unknown fields',()=>{const r=setup();r.d.students[0].name='=HYPERLINK("malicious")';r.d.students[0].custom={flag:true,n:null,s:'',arr:[1,'한글']};const t=r.app.tablesFor_(r.d),round=r.app.fromTables_(Object.fromEntries(Object.entries(t).map(([k,v])=>[k,r.app.recordsFromCells_(r.app.tableCells_(v))])));assert.equal(r.app.checksum_(round),r.app.checksum_(r.d));});
 test('Sheets adapter commits two different table changes in one atomic batch',()=>{const r=setup(),mock=sheetsDouble(r.app,r.d),loaded=r.app.readLedger_('mock'),next=clone(loaded.data);next.students[0].name='새 이름';next.notices.push({id:'new',title:'공지',content:'안내'});r.app.writeLedger_('mock',loaded.data,next,loaded.sheets);assert.equal(mock.read().students[0].name,'새 이름');assert.equal(mock.read().notices.length,1);assert.equal(mock.calls.filter(c=>c.method==='post').length,1);});
 test('failed multi-table batch leaves every table unchanged',()=>{const r=setup(),mock=sheetsDouble(r.app,r.d),loaded=r.app.readLedger_('mock'),next=clone(loaded.data);next.students[0].name='변경';next.notices.push({id:'new',title:'공지'});mock.fail=true;assert.throws(()=>r.app.writeLedger_('mock',loaded.data,next,loaded.sheets),/batch failure/);assert.deepEqual(mock.read(),loaded.data);});

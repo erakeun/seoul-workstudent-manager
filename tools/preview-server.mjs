@@ -5,6 +5,7 @@ import {staged,fixture} from '../test/helpers/runtime.js';
 const runtime=staged(fixture());
 runtime.setTime(new Date().toISOString());
 const d=runtime.ledger();
+d.semesters=d.semesters.map(s=>({...s,termEndDate:'2026-09-20',vacationStartDate:'2026-09-21',vacationHours:{general:{start:'08:00',end:'18:00'},holmz:{start:'08:00',end:'18:00'}},termWeeklyLimit:20,vacationWeeklyLimit:30}));
 d.accounts=d.accounts.map(a=>runtime.app.makeUser_(a,'preview-only'));
 runtime.replaceLedger(d);
 const files={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/styles.css':'styles.css','/data/seed.json':'data/seed.json'};
