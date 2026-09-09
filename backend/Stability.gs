@@ -97,12 +97,11 @@ function adminMutate_(token,changes){
     }
     if(c.entity==='semesters'){
       if(old&&c.fields.budgets!==undefined&&canonical_(c.fields.budgets)!==canonical_(old.budgets))throw Error('예산 변경은 예산 설정 전용 요청을 사용하세요.');
-      next.termWeeklyLimit=Number(next.termWeeklyLimit||20);next.vacationWeeklyLimit=Number(next.vacationWeeklyLimit||30);next.termEndDate=next.termEndDate||'';next.vacationStartDate=next.vacationStartDate||'';next.vacationHours=next.vacationHours||{};next.mixedWeekPolicy=next.mixedWeekPolicy||'';
+      next.termWeeklyLimit=Number(next.termWeeklyLimit||20);next.vacationWeeklyLimit=Number(next.vacationWeeklyLimit||30);next.termEndDate=next.termEndDate||'';next.vacationStartDate=next.vacationStartDate||'';next.vacationHours=next.vacationHours||{};next.mixedWeekPolicy='SEPARATE_PERIOD_LIMITS';
       if(!next.startDate||!next.endDate||next.endDate<next.startDate)throw Error('학기 기간을 확인하세요.');
       if((next.termEndDate||next.vacationStartDate)&&(semesterPeriodForDate_(next,next.startDate)===PERIOD_CONFIG_REQUIRED))throw Error('종강일은 학기 안에, 방학 시작일은 종강일 다음부터 학기 종료일 사이로 설정하세요.');
       ['general','holmz'].forEach(function(site){const hours=next.vacationHours[site]||{},hasStart=!!hours.start,hasEnd=!!hours.end;if(hasStart!==hasEnd||(hasStart&&(!validTime_(hours.start)||!validTime_(hours.end)||minutes_(hours.end)<=minutes_(hours.start))))throw Error('방학 운영시간의 시작·종료를 모두 올바르게 설정하세요.');});
       if(!Number.isFinite(Number(next.termWeeklyLimit))||Number(next.termWeeklyLimit)<=0||!Number.isFinite(Number(next.vacationWeeklyLimit))||Number(next.vacationWeeklyLimit)<=0)throw Error('주간 최대시간은 0보다 커야 합니다.');
-      if(next.mixedWeekPolicy&&['SEPARATE_PERIOD_LIMITS','STRICTER_TOTAL_LIMIT'].indexOf(next.mixedWeekPolicy)===-1)throw Error('올바른 경계 주간 정책을 선택하세요.');
     }
     if(c.entity==='settings'){if(!data.semesters.some(s=>s.id===next.activeSemesterId))throw Error('운영 학기를 찾을 수 없습니다.');data.settings=next;data.semesters.forEach(s=>s.active=s.id===next.activeSemesterId);}
     else if(old)list[list.indexOf(old)]=next;else list.push(next);

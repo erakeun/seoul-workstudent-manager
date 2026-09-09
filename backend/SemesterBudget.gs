@@ -58,9 +58,7 @@ function operationalViolations_(data){
       ['general','holmz'].forEach(function(site){const hours=vacationHoursForSite_(semester,site);eventsForDate_(data,site,key,semester.id,'').forEach(function(event){if(!hours||minutes_(event.start)<minutes_(hours.start)||minutes_(event.end)>minutes_(hours.end))violations.push({key:'hours:'+event.workInstanceId,type:'VACATION_HOURS',semesterId:semester.id,site:site,date:key,event:event,hours:hours});});});
     }
     const weeks=weeklyPolicyState_(data,semester),termLimit=Number(semester.termWeeklyLimit||20)*60,vacationLimit=Number(semester.vacationWeeklyLimit||30)*60;
-    Object.keys(weeks).forEach(function(week){if(kstDateAdd_(week,6)<today_())return;const state=weeks[week],mixed=state.periods.TERM&&state.periods.VACATION;Object.keys(state.students).forEach(function(studentId){const totals=state.students[studentId],policy=semester.mixedWeekPolicy||'';
-      if(mixed&&!policy&&totals.TERM+totals.VACATION>0){violations.push({key:'mixed:'+semester.id+':'+week+':'+studentId,type:'MIXED_POLICY',semesterId:semester.id,week:week,studentId:studentId,minutes:totals.TERM+totals.VACATION});return;}
-      if(mixed&&policy==='STRICTER_TOTAL_LIMIT'){const total=totals.TERM+totals.VACATION,limit=Math.min(termLimit,vacationLimit);if(total>limit)violations.push({key:'limit:'+semester.id+':'+week+':'+studentId,type:'WEEKLY_LIMIT',semesterId:semester.id,week:week,studentId:studentId,period:'MIXED',minutes:total,limit:limit});return;}
+    Object.keys(weeks).forEach(function(week){if(kstDateAdd_(week,6)<today_())return;const state=weeks[week];Object.keys(state.students).forEach(function(studentId){const totals=state.students[studentId];
       [[PERIOD_TERM,termLimit],[PERIOD_VACATION,vacationLimit]].forEach(function(pair){const minutes=totals[pair[0]]||0;if(minutes>pair[1])violations.push({key:'limit:'+semester.id+':'+week+':'+studentId+':'+pair[0],type:'WEEKLY_LIMIT',semesterId:semester.id,week:week,studentId:studentId,period:pair[0],minutes:minutes,limit:pair[1]});});
     });});
   });return violations;
@@ -69,7 +67,6 @@ function validateChangedOperationalRules_(before,next){
   if(['schedules','exceptions','extraJobs','swaps','students','semesters'].every(function(k){return canonical_(before[k])===canonical_(next[k]);}))return;
   const oldMap={};operationalViolations_(before).forEach(function(v){oldMap[v.key]=v;});
   const violation=operationalViolations_(next).find(function(v){return!oldMap[v.key]||Number(v.minutes||0)>Number(oldMap[v.key].minutes||0);});if(!violation)return;
-  if(violation.type==='MIXED_POLICY')throw Error('종강·방학 시작이 섞인 주의 최대시간 운영정책 결정이 필요합니다. 학기 설정에서 경계 주간 정책을 선택하세요.');
   if(violation.type==='VACATION_HOURS')throw Error('방학 일정이 설정된 운영시간을 벗어납니다. 방학 시작·종료시간을 확인하세요.');
   const student=next.students.find(function(s){return s.id===violation.studentId;}),beforeSemester=before.semesters.find(function(s){return s.id===violation.semesterId;}),oldWeek=beforeSemester&&weeklyPolicyState_(before,beforeSemester)[violation.week],oldTotals=oldWeek&&oldWeek.students[violation.studentId]||{TERM:0,VACATION:0},current=(violation.period==='MIXED'?oldTotals.TERM+oldTotals.VACATION:Number(oldTotals[violation.period]||0))/60,expected=violation.minutes/60,added=Math.max(0,expected-current),label=violation.period===PERIOD_VACATION?'방학중':violation.period===PERIOD_TERM?'학기중':'경계 주간';
   throw Error((student&&student.name||'학생')+' '+label+' 주간 한도 초과: 현재 '+current.toFixed(1)+'시간 + 추가 '+added.toFixed(1)+'시간 = 예상 '+expected.toFixed(1)+'시간, 허용 최대 '+(violation.limit/60).toFixed(1)+'시간');

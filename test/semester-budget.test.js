@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {calculateBudgetCategories,defaultSemesterDates,eventsForDate,normalizeData,semesterPeriodForDate,studentAbsenceSummary} from '../app.js';
+import {calculateBudgetCategories,defaultSemesterDates,eventsForDate,normalizeData,semesterPeriodForDate,studentAbsenceSummary,weeklyWorkSummary} from '../app.js';
 import {fixture,staged} from './helpers/runtime.js';
 
 function configuredFixture(){
@@ -92,9 +92,19 @@ test('a confirmed substitute is counted only for the substitute and cannot push 
   const base=configuredFixture();base.schedules=[schedule('m','a','2026-09-21','09:00','16:00','VACATION'),schedule('t','a','2026-09-22','09:00','16:00','VACATION'),schedule('w','a','2026-09-23','09:00','16:00','VACATION'),schedule('h','a','2026-09-24','09:00','16:00','VACATION'),schedule('requester','b','2026-09-25','09:00','12:00','VACATION')];base.swaps=[{id:'swap',semesterId:'term',site:'general',scheduleId:'requester',date:'2026-09-25',requesterStudentId:'b',requesterName:'b',status:'모집중',applicants:[{studentId:'a',name:'a'}]}];const r=staged(base),result=r.request('adminUpdateSwap',{swapId:'swap',status:'대타확정',assigneeId:'a',note:'',expectedRevision:0});assert.equal(result.ok,false);assert.match(result.error,/예상 31\.0시간.*허용 최대 30\.0시간/);assert.equal(r.ledger().swaps[0].status,'모집중');
 });
 
-test('vacation operating hours and unresolved mixed-week policy are server-side gates',()=>{
+test('vacation operating hours remain a server-side gate',()=>{
   let base=configuredFixture();let r=staged(base),result=r.request('adminMutate',{changes:[change(schedule('late','a','2026-09-21','17:00','19:00','VACATION'))]});assert.equal(result.ok,false);assert.match(result.error,/방학 일정.*운영시간/);
-  base=configuredFixture();Object.assign(base.semesters[0],{termEndDate:'2026-09-15',vacationStartDate:'2026-09-17',mixedWeekPolicy:''});base.schedules=[schedule('term','a','2026-09-14','09:00','10:00')];r=staged(base);result=r.request('adminMutate',{changes:[change(schedule('vac','a','2026-09-17','09:00','10:00','VACATION'))]});assert.equal(result.ok,false);assert.match(result.error,/운영정책 결정이 필요/);
+});
+
+test('mixed boundary weeks always apply TERM 20 and VACATION 30 hour limits separately',()=>{
+  const base=configuredFixture();Object.assign(base.semesters[0],{termEndDate:'2026-09-15',vacationStartDate:'2026-09-17',mixedWeekPolicy:''});base.schedules=[
+    schedule('term-m','a','2026-09-14','08:00','18:00'),schedule('term-t','a','2026-09-15','08:00','18:00'),
+    schedule('vac-h','a','2026-09-17','08:00','18:00','VACATION'),schedule('vac-f','a','2026-09-18','08:00','18:00','VACATION'),schedule('vac-s','a','2026-09-19','08:00','18:00','VACATION')
+  ];
+  let r=staged(base),normalized=r.app.normalizeData_(base);assert.equal(normalized.semesters[0].mixedWeekPolicy,'SEPARATE_PERIOD_LIMITS');
+  let result=r.request('adminMutate',{changes:[{entity:'semesters',id:'term',operation:'upsert',expectedRevision:0,fields:{name:'경계 주간'}}]});assert.equal(result.ok,true,result.error);
+  const frontend=normalizeData(base),summary=weeklyWorkSummary(frontend,'a',new Date('2026-09-16T12:00:00'),'term');assert.equal(frontend.semesters[0].mixedWeekPolicy,'SEPARATE_PERIOD_LIMITS');assert.equal(summary.period,'MIXED');assert.deepEqual(summary.byPeriod,{TERM:20,VACATION:30});assert.deepEqual(summary.limits,{TERM:20,VACATION:30});
+  r=staged(base);result=r.request('adminMutate',{changes:[change(schedule('term-over','a','2026-09-15','18:00','18:30'))]});assert.equal(result.ok,false);assert.match(result.error,/학기중.*예상 20\.5시간.*허용 최대 20\.0시간/);
 });
 
 test('server rejects malformed period types and partial vacation operating hours',()=>{
