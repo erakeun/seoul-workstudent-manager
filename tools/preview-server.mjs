@@ -2,7 +2,9 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import {staged,fixture} from '../test/helpers/runtime.js';
-const runtime=staged(fixture()),d=runtime.ledger();
+const runtime=staged(fixture());
+runtime.setTime(new Date().toISOString());
+const d=runtime.ledger();
 d.accounts=d.accounts.map(a=>runtime.app.makeUser_(a,'preview-only'));
 runtime.replaceLedger(d);
 const files={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/styles.css':'styles.css','/data/seed.json':'data/seed.json'};

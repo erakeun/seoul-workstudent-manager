@@ -61,13 +61,13 @@ function adminCorrectAttendance_(token,workInstanceId,actualCheckIn,actualCheckO
 
 function adminMarkAbsent_(token,workInstanceId,reason){
   const admin=requireAdmin_(token),data=data_(),event=resolveWorkInstance_(data,workInstanceId),now=new Date();
-  if(event.workDate!==today_())throw new Error('결근은 당일 근무만 처리할 수 있습니다.');
   if(now<dateTime_(event.workDate,event.start))throw new Error('근무 시작 전에는 결근 처리할 수 없습니다.');
   const existing=data.attendances.find(function(a){return a.workInstanceId===workInstanceId;});
   if(existing&&existing.checkoutType==='ABSENT')throw new Error('이미 결근 처리된 근무입니다.');
   if(existing&&(existing.actualCheckIn||existing.actualCheckOut))throw new Error('출퇴근 기록이 있는 근무는 결근 처리할 수 없습니다.');
   const recordedAt=now.toISOString(),record={attendanceId:existing?existing.attendanceId:Utilities.getUuid(),workInstanceId:workInstanceId,semesterId:event.semesterId,site:event.site,studentId:event.studentId,scheduleId:event.id,sourceType:event.sourceType,workDate:event.workDate,scheduledStart:event.start,scheduledEnd:event.end,actualCheckIn:'',actualCheckOut:'',checkoutType:'ABSENT',correctedByAdmin:false,absenceReason:String(reason||'관리자 결근 처리'),absenceMarkedBy:admin.id,absenceMarkedByName:admin.name,absenceMarkedAt:recordedAt,createdAt:existing?existing.createdAt:recordedAt,updatedAt:recordedAt};
   data.attendances=data.attendances.filter(function(a){return a.workInstanceId!==workInstanceId;});data.attendances.push(record);
+  captureAttendance_(data,event);
   data.attendanceAudit.push({id:Utilities.getUuid(),attendanceId:record.attendanceId,workInstanceId:workInstanceId,before:existing?copy_(existing):null,after:copy_(record),reason:'결근 처리: '+record.absenceReason,adminId:admin.id,adminName:admin.name,createdAt:recordedAt});
   saveData_(data);return{ok:true,data:dataForUser_(data,admin)};
 }
