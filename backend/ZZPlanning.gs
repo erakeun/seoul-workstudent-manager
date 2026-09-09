@@ -6,26 +6,6 @@ function ensurePlanningData_(data){
   data.notices=(data.notices||[]).map(function(n){return Object.assign({requiresRead:false,readBy:[]},n);});
   return data;
 }
-function data_(){const data=ensurePlanningData_(normalizeData_(readStoredData_()));backfillAttendance_(data);return data;}
-function saveData_(data){stageStoredData_(ensurePlanningData_(normalizeData_(data)));}
-function beginTransaction_(){const loaded=readLedger_(ledgerId_()),before=ensurePlanningData_(loaded.data);transaction_={id:ledgerId_(),before:copy_(before),data:copy_(before),sheets:loaded.sheets,dirty:false};}
-function dataForUser_(data,user){
-  data=ensurePlanningData_(normalizeData_(data));
-  if(user.role==='admin')return publicAdminData_(data);
-  if(user.role==='viewer')return publicViewerData_(data);
-  if(user.role!=='student')throw Error('지원하지 않는 권한입니다.');
-  const s=studentForUser_(data,user),site=s.site,term=data.settings.activeSemesterId,scoped=function(items){return items.filter(function(r){return r.semesterId===term&&(r.site===site||r.site==='all');});};
-  const base=publicStudentData_(data,user);
-  base.protocolVersion=5;
-  base.classSchedules=data.classSchedules.filter(function(r){return r.studentId===s.id&&r.semesterId===term;});
-  base.workPreferences=data.workPreferences.filter(function(r){return r.studentId===s.id&&r.semesterId===term;});
-  base.scheduleDrafts=[];
-  base.notices=scoped(data.notices).map(function(r){return Object.assign(pick_(r,['id','semesterId','site','title','content','important','author','createdAt','requiresRead']),{readBy:(r.readBy||[]).indexOf(user.id)!==-1?[user.id]:[]});});
-  return base;
-}
-function publicAdminData_(data){return{version:data.version,protocolVersion:5,settings:data.settings,semesters:data.semesters,students:data.students.map(adminStudent_),schedules:data.schedules,exceptions:data.exceptions,notices:data.notices,handovers:data.handovers,handoverNotes:data.handoverNotes,swaps:data.swaps,extraJobs:data.extraJobs,attendances:data.attendances,attendanceAudit:data.attendanceAudit,budgetAudit:data.budgetAudit,classSchedules:data.classSchedules,workPreferences:data.workPreferences,scheduleDrafts:data.scheduleDrafts,accounts:data.accounts.map(publicUser_)}};
-function publicViewerData_(data){return{version:data.version,protocolVersion:5,settings:data.settings,semesters:data.semesters,students:data.students.map(safeStudent_),schedules:data.schedules,exceptions:data.exceptions,notices:data.notices,handovers:data.handovers,handoverNotes:data.handoverNotes,swaps:data.swaps,extraJobs:data.extraJobs,attendances:data.attendances,attendanceAudit:data.attendanceAudit,classSchedules:[],workPreferences:[],scheduleDrafts:[],accounts:[]};}
-
 function assertPlanningTime_(item){if(!item||!validTime_(item.start)||!validTime_(item.end)||minutes_(item.end)<=minutes_(item.start)||minutes_(item.start)%30||minutes_(item.end)%30)throw Error('시간은 30분 단위로 올바르게 입력하세요.');}
 function overlaps_(a,b){return minutes_(a.start)<minutes_(b.end)&&minutes_(a.end)>minutes_(b.start);}
 function classConflict_(data,studentId,semesterId,date,start,end,excludeId){const weekday=dateTime_(date,'12:00').getDay();return data.classSchedules.some(function(c){return c.id!==excludeId&&c.studentId===studentId&&c.semesterId===semesterId&&Number(c.weekday)===weekday&&overlaps_({start:start,end:end},c);});}

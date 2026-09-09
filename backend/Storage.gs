@@ -84,7 +84,7 @@ function validateLedger_(data){
   return integrity_(data);
 }
 function integrity_(data){const counts={};LEDGER_TABLES.forEach(k=>counts[k]=(data[k]||[]).length);counts.absences=(data.attendances||[]).filter(a=>a.checkoutType==='ABSENT').length;['admin','viewer','student'].forEach(role=>counts[role+'Accounts']=(data.accounts||[]).filter(a=>a.role===role).length);return{counts,checksum:checksum_(data)};}
-function beginTransaction_(){const loaded=readLedger_(ledgerId_());transaction_={id:ledgerId_(),before:loaded.data,data:copy_(loaded.data),sheets:loaded.sheets,dirty:false};}
+function beginTransaction_(){const loaded=readLedger_(ledgerId_()),before=ensurePlanningData_(loaded.data);transaction_={id:ledgerId_(),before:copy_(before),data:copy_(before),sheets:loaded.sheets,dirty:false};}
 function finishTransaction_(){if(!transaction_.dirty)return;validateLedger_(transaction_.data);writeLedger_(transaction_.id,transaction_.before,transaction_.data,transaction_.sheets);}
 function readStoredData_(){if(transaction_)return copy_(transaction_.data);return readLedger_(ledgerId_()).data;}
 function stageStoredData_(data){if(!transaction_)throw Error('쓰기 트랜잭션이 필요합니다.');transaction_.data=copy_(data);transaction_.dirty=true;}
