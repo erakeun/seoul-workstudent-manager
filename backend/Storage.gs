@@ -114,9 +114,12 @@ function prepareLedger_(spreadsheetId,expectedOwner){
   }
   LEDGER_TABLES.concat(['settings','metadata']).filter(n=>existing.indexOf(n)===-1).forEach((n,i)=>requests.push({addSheet:{properties:{title:n,gridProperties:{rowCount:1000,columnCount:40,frozenRowCount:1}}}}));
   if(requests.length)ledgerCall_(spreadsheetId+':batchUpdate','post',{requests});
-  const ready=ledgerCall_(spreadsheetId+'?fields=sheets.properties');
+  const ready=ledgerCall_(spreadsheetId+'?fields=sheets(properties,protectedRanges(description,warningOnly,range))');
   // Warning-only protection: does not lock out the owner/execution identity.
-  ledgerCall_(spreadsheetId+':batchUpdate','post',{requests:ready.sheets.filter(s=>LEDGER_TABLES.concat(['settings','metadata']).indexOf(s.properties.title)!==-1).map(s=>({addProtectedRange:{protectedRange:{range:{sheetId:s.properties.sheetId},description:'시스템 원장: ID/헤더/JSON/인증정보 직접 수정 금지. 앱에서 변경하세요.',warningOnly:true}}}))});
+  const protectionDescription='시스템 원장: ID/헤더/JSON/인증정보 직접 수정 금지. 앱에서 변경하세요.',protectionRequests=ready.sheets.filter(function(s){
+    return LEDGER_TABLES.concat(['settings','metadata']).indexOf(s.properties.title)!==-1&&!(s.protectedRanges||[]).some(function(p){return p.description===protectionDescription&&p.warningOnly&&p.range&&p.range.sheetId===s.properties.sheetId;});
+  }).map(s=>({addProtectedRange:{protectedRange:{range:{sheetId:s.properties.sheetId},description:protectionDescription,warningOnly:true}}}));
+  if(protectionRequests.length)ledgerCall_(spreadsheetId+':batchUpdate','post',{requests:protectionRequests});
   return{spreadsheetId,prepared:true};
 }
 function rehearseMigration_(raw){
