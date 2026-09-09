@@ -23,6 +23,7 @@ function handle_(req){
         if(req.action!=='adminRestoreBackup'){
           guardRecordedWork_(transaction_.before,transaction_.data);
           validateChangedConflicts_(transaction_.before,transaction_.data);
+          validateChangedOperationalRules_(transaction_.before,transaction_.data);
         }
         if(receipt)transaction_.data.requests=transaction_.data.requests.filter(r=>Date.parse(r.createdAt)>Date.now()-2*86400000).concat(receipt);
         finishTransaction_();
@@ -33,7 +34,7 @@ function handle_(req){
   }));}catch(err){return respond_({ok:false,error:err.message||'저장 실패. 다시 조회하세요.'});}
 }
 function assertRequestRevision_(req,data){
-  const targets={adminUpsertUser:['accounts',req.user?.id],adminDeleteUser:['accounts',req.userId],adminUpsertExtraJob:['extraJobs',req.job?.id],adminUpdateSwap:['swaps',req.swapId],adminCancelExtraJob:['extraJobs',req.jobId],adminUpdateExtraApplicant:['extraJobs',req.jobId]};
+  const targets={adminUpsertUser:['accounts',req.user?.id],adminDeleteUser:['accounts',req.userId],adminUpsertExtraJob:['extraJobs',req.job?.id],adminUpdateSwap:['swaps',req.swapId],adminCancelExtraJob:['extraJobs',req.jobId],adminUpdateExtraApplicant:['extraJobs',req.jobId],adminUpdateBudget:['semesters',req.budget?.semesterId]};
   const target=targets[req.action];if(!target||!target[1])return;const record=data[target[0]].find(r=>r.id===target[1]);if(!record)throw Error('수정 대상이 없습니다.');
   if(Number(req.expectedRevision||0)!==Number(record.revision||0))throw Error('다른 사용자가 수정했습니다. 새로고침하세요.');
 }
@@ -45,9 +46,9 @@ function pick_(record,fields){const out={};fields.forEach(k=>{if(record[k]!==und
 function publicStudentData_(data,user){
   const s=studentForUser_(data,user),site=s.site,term=data.settings.activeSemesterId;
   const scoped=items=>items.filter(r=>r.semesterId===term&&(r.site===site||r.site==='all'));
-  const eventFields=['id','site','semesterId','studentId','studentName','kind','date','weekday','start','end','scheduleId','type','effectiveFrom','effectiveUntil'];
+  const eventFields=['id','site','semesterId','studentId','studentName','kind','date','weekday','start','end','scheduleId','type','periodType','effectiveFrom','effectiveUntil'];
   const ownAttendance=data.attendances.filter(a=>a.semesterId===term&&a.studentId===s.id).map(a=>{const safe=pick_(a,['attendanceId','workInstanceId','semesterId','site','studentId','scheduleId','sourceType','workDate','scheduledStart','scheduledEnd','actualCheckIn','actualCheckOut','checkoutType','correctedByAdmin','snapshotVersion','snapshotStatus','recognizedMinutes']);if(a.snapshot)safe.snapshot=pick_(a.snapshot,['id','studentId','studentName','semesterId','site','workDate','start','end','sourceType','isSubstitute','isExtraWork','originalStudentName','title','place']);return safe;});
-  return{version:4,protocolVersion:5,settings:{activeSemesterId:term},semesters:data.semesters.map(t=>pick_(t,['id','name','startDate','endDate','active'])),students:[safeStudent_(s)],accounts:[],attendanceAudit:[],
+  return{version:4,protocolVersion:5,settings:{activeSemesterId:term},semesters:data.semesters.map(t=>pick_(t,['id','name','startDate','endDate','termEndDate','vacationStartDate','vacationHours','termWeeklyLimit','vacationWeeklyLimit','mixedWeekPolicy','active'])),students:[safeStudent_(s)],accounts:[],attendanceAudit:[],budgetAudit:[],
     schedules:scoped(data.schedules).map(r=>pick_(r,eventFields)),
     workEligibility:data.students.filter(p=>p.site===site).map(p=>Object.assign(pick_(p,['id','active','inactiveFrom']),{semesterIds:(p.semesterIds||[]).includes(term)?[term]:[],participationEndDates:p.participationEndDates?.[term]?{[term]:p.participationEndDates[term]}:{}})),
     exceptions:scoped(data.exceptions).map(r=>pick_(r,eventFields)),
@@ -60,11 +61,11 @@ function publicStudentData_(data,user){
 }
 const MUTABLE_FIELDS={
  students:['name','site','type','studentNumber','phone','email','color','active','semesterIds','participationEndDates','inactiveFrom'],
- schedules:['semesterId','site','studentId','studentName','kind','weekday','date','start','end','effectiveFrom','effectiveUntil'],
+ schedules:['semesterId','site','studentId','studentName','periodType','kind','weekday','date','start','end','effectiveFrom','effectiveUntil'],
  exceptions:['semesterId','site','type','date','scheduleId','studentId','studentName','start','end','reason'],
  notices:['semesterId','site','title','content','url','important','author','createdAt'],
  handovers:['semesterId','site','title','content','url','important','author','createdAt'],
- semesters:['name','startDate','endDate','budgets','active'],settings:['activeSemesterId']
+ semesters:['name','startDate','endDate','termEndDate','vacationStartDate','vacationHours','termWeeklyLimit','vacationWeeklyLimit','mixedWeekPolicy','budgets','active'],settings:['activeSemesterId']
 };
 function adminMutate_(token,changes){
   const admin=requireAdmin_(token),data=data_();if(!Array.isArray(changes)||!changes.length||changes.length>200)throw Error('변경 항목은 1~200개여야 합니다.');
@@ -91,9 +92,18 @@ function adminMutate_(token,changes){
     if(c.entity==='schedules'||c.entity==='exceptions'){
       if(!data.students.some(s=>s.id===next.studentId)||!data.semesters.some(s=>s.id===next.semesterId))throw Error('학생 또는 학기를 찾을 수 없습니다.');
       if(next.type!=='cancel'&&(!validTime_(next.start)||!validTime_(next.end)||minutes_(next.end)<=minutes_(next.start)))throw Error('근무시간을 확인하세요.');
+      if(c.entity==='schedules'&&['TERM','VACATION'].indexOf(next.periodType||'TERM')===-1)throw Error('근무 일정의 운영 기간을 확인하세요.');
       if(c.entity==='schedules'&&!participates_(data,next.studentId,next.semesterId,next.date||today_()))throw Error('해당 학기에 참여 중인 학생만 배정할 수 있습니다.');
     }
-    if(c.entity==='semesters'&&(!next.startDate||!next.endDate||next.endDate<next.startDate))throw Error('학기 기간을 확인하세요.');
+    if(c.entity==='semesters'){
+      if(old&&c.fields.budgets!==undefined&&canonical_(c.fields.budgets)!==canonical_(old.budgets))throw Error('예산 변경은 예산 설정 전용 요청을 사용하세요.');
+      next.termWeeklyLimit=Number(next.termWeeklyLimit||20);next.vacationWeeklyLimit=Number(next.vacationWeeklyLimit||30);next.termEndDate=next.termEndDate||'';next.vacationStartDate=next.vacationStartDate||'';next.vacationHours=next.vacationHours||{};next.mixedWeekPolicy=next.mixedWeekPolicy||'';
+      if(!next.startDate||!next.endDate||next.endDate<next.startDate)throw Error('학기 기간을 확인하세요.');
+      if((next.termEndDate||next.vacationStartDate)&&(semesterPeriodForDate_(next,next.startDate)===PERIOD_CONFIG_REQUIRED))throw Error('종강일은 학기 안에, 방학 시작일은 종강일 다음부터 학기 종료일 사이로 설정하세요.');
+      ['general','holmz'].forEach(function(site){const hours=next.vacationHours[site]||{},hasStart=!!hours.start,hasEnd=!!hours.end;if(hasStart!==hasEnd||(hasStart&&(!validTime_(hours.start)||!validTime_(hours.end)||minutes_(hours.end)<=minutes_(hours.start))))throw Error('방학 운영시간의 시작·종료를 모두 올바르게 설정하세요.');});
+      if(!Number.isFinite(Number(next.termWeeklyLimit))||Number(next.termWeeklyLimit)<=0||!Number.isFinite(Number(next.vacationWeeklyLimit))||Number(next.vacationWeeklyLimit)<=0)throw Error('주간 최대시간은 0보다 커야 합니다.');
+      if(next.mixedWeekPolicy&&['SEPARATE_PERIOD_LIMITS','STRICTER_TOTAL_LIMIT'].indexOf(next.mixedWeekPolicy)===-1)throw Error('올바른 경계 주간 정책을 선택하세요.');
+    }
     if(c.entity==='settings'){if(!data.semesters.some(s=>s.id===next.activeSemesterId))throw Error('운영 학기를 찾을 수 없습니다.');data.settings=next;data.semesters.forEach(s=>s.active=s.id===next.activeSemesterId);}
     else if(old)list[list.indexOf(old)]=next;else list.push(next);
   });
@@ -116,7 +126,7 @@ function backfillAttendance_(data){
     if(a.recognizedMinutes===undefined||a.recognizedMinutes===null)a.recognizedMinutes=recognizedMinutes_(a,new Date());
   });
 }
-function captureAttendance_(data,event){data.attendances.filter(a=>a.workInstanceId===event.workInstanceId).forEach(a=>{if(!a.snapshot){a.snapshot=pick_(event,['id','studentId','studentName','semesterId','site','workDate','start','end','sourceType','isSubstitute','isExtraWork','originalStudentId','originalStudentName','swapId','extraJobId','title','place']);a.snapshotVersion=1;a.snapshotStatus='CAPTURED';const s=data.students.find(s=>s.id===a.studentId),t=data.semesters.find(t=>t.id===a.semesterId),b=t?.budgets?.[a.site];a.snapshot.wage=Number(b?.rates?.[s?.type]??b?.wage)||0;}a.recognizedMinutes=recognizedMinutes_(a,new Date());});}
+function captureAttendance_(data,event){data.attendances.filter(a=>a.workInstanceId===event.workInstanceId).forEach(a=>{if(!a.snapshot){a.snapshot=pick_(event,['id','studentId','studentName','semesterId','site','workDate','start','end','periodType','sourceType','isSubstitute','isExtraWork','originalStudentId','originalStudentName','swapId','extraJobId','title','place']);a.snapshotVersion=1;a.snapshotStatus='CAPTURED';const s=data.students.find(s=>s.id===a.studentId),t=data.semesters.find(t=>t.id===a.semesterId),category=budgetCategory_(t,a.site,s&&s.type);a.snapshot.workType=s&&s.type||'';a.snapshot.budgetWorkType=category.key;a.snapshot.wage=category.wage||0;}a.recognizedMinutes=recognizedMinutes_(a,new Date());});}
 function guardRecordedWork_(before,next){
   // A changed/cancelled source may not redirect an already recorded instance.
   const shape=event=>event?pick_(event,['studentId','site','start','end']):null;

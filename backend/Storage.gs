@@ -3,7 +3,7 @@
  * Each entity is a row with field columns, not one database JSON cell.
  */
 const LEDGER_POINTER = 'swtm_ledger_v5';
-const LEDGER_TABLES = ['students','accounts','semesters','schedules','exceptions','attendances','attendanceAudit','extraJobs','swaps','notices','handovers','handoverNotes','requests'];
+const LEDGER_TABLES = ['students','accounts','semesters','schedules','exceptions','attendances','attendanceAudit','budgetAudit','extraJobs','swaps','notices','handovers','handoverNotes','requests'];
 var transaction_ = null;
 var lockDepth_ = 0;
 function canonical_(value) {
@@ -89,7 +89,7 @@ function stageStoredData_(data){if(!transaction_)throw Error('쓰기 트랜잭�
 
 /** Backup envelope deliberately excludes session tokens; raw properties backup is separate. */
 function backupEnvelope_(data){return{format:'seoul-workstudent-full',schemaVersion:5,createdAt:new Date().toISOString(),excluded:['sessions'],photoPolicy:'private Drive files retained; links only, not image bytes',integrity:integrity_(data),data:copy_(data)};}
-function validateBackup_(backup){if(!backup||backup.format!=='seoul-workstudent-full'||backup.schemaVersion!==5)throw Error('지원하지 않는 백업 버전입니다.');validateLedger_(backup.data);if(checksum_(backup.data)!==backup.integrity.checksum)throw Error('백업 체크섬이 일치하지 않습니다.');return copy_(backup.data);}
+function validateBackup_(backup){if(!backup||backup.format!=='seoul-workstudent-full'||backup.schemaVersion!==5)throw Error('지원하지 않는 백업 버전입니다.');if(checksum_(backup.data)!==backup.integrity.checksum)throw Error('백업 체크섬이 일치하지 않습니다.');const needsUpgrade=!Array.isArray(backup.data.budgetAudit)||(backup.data.semesters||[]).some(function(s){return s.termWeeklyLimit===undefined||s.vacationWeeklyLimit===undefined;})||(backup.data.schedules||[]).some(function(s){return s.periodType===undefined;}),restored=needsUpgrade?normalizeData_(backup.data):copy_(backup.data);validateLedger_(restored);return restored;}
 
 /** Owner-only editor helpers: trailing underscore prevents google.script.run access.
  * No helper is routed by the public web API. IDs/owners are explicit, not guessed.
