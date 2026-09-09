@@ -49,8 +49,11 @@ test('four budget categories remain independent and forecast only confirmed futu
 });
 
 test('zero budgets and unknown work types are explicit risk or setup-required states',()=>{
-  const data=normalizeData(configuredFixture());data.semesters[0].budgets.general.byWorkType.NATIONAL.total=0;data.schedules=[schedule('known','a','2026-09-09','09:00','10:00'),schedule('unknown','b','2026-09-10','09:00','10:00')];data.students[1].type='미분류';
-  const buckets=calculateBudgetCategories(data,'term',new Date('2026-09-08T12:00:00+09:00'));
+  const data=normalizeData(configuredFixture());data.semesters[0].budgets.general.byWorkType.NATIONAL.total=0;data.schedules=[schedule('known','a','2026-09-09','09:00','10:00')];
+  let buckets=calculateBudgetCategories(data,'term',new Date('2026-09-08T12:00:00+09:00'));
+  assert.equal(buckets['general:NATIONAL'].status,'위험');
+  data.schedules.push(schedule('unknown','b','2026-09-10','09:00','10:00'));data.students[1].type='미분류';
+  buckets=calculateBudgetCategories(data,'term',new Date('2026-09-08T12:00:00+09:00'));
   assert.equal(buckets['general:NATIONAL'].status,'설정 필요');
   assert.equal(buckets['general:INTERNAL'].status,'설정 필요');
   assert.ok(buckets['general:NATIONAL'].accountingReview>0);
