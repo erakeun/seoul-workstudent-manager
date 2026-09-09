@@ -16,6 +16,46 @@ function rehearsalLog_(label,value){console.log(label+': '+JSON.stringify(value)
 function prepareProductionLedgerCandidate(){return rehearsalLog_('PREPARE',prepareLedger_(REHEARSAL_SPREADSHEET_ID,rehearsalOwner_()));}
 function diagnoseSheetsApiAccess(){const response=UrlFetchApp.fetch('https://sheets.googleapis.com/v4/spreadsheets/'+REHEARSAL_SPREADSHEET_ID+'?fields=spreadsheetId%2Cproperties.title',{headers:{Authorization:'Bearer '+ScriptApp.getOAuthToken()},muteHttpExceptions:true});let body={};try{body=JSON.parse(response.getContentText());}catch(_){body={message:response.getContentText().slice(0,500)};}return rehearsalLog_('SHEETS_API',{status:response.getResponseCode(),error:body.error?{code:body.error.code,status:body.error.status,message:body.error.message}:null,title:body.properties&&body.properties.title});}
 function runProductionMigrationRehearsal(){const backup=latestMatchingRawBackup_(),started=Date.now(),result=migrateLegacy_(REHEARSAL_SPREADSHEET_ID,backup.file.getId(),rehearsalOwner_()),summary={backupFileId:backup.file.getId(),backupChecksum:backup.value.checksum,elapsedMs:Date.now()-started,integrity:result.integrity,reviewRequiredCount:(result.uncertain||[]).length,reused:!!result.reused,sourceOfTruth:PropertiesService.getScriptProperties().getProperty(LEDGER_POINTER)?'Google Sheets':'swtm2'};return rehearsalLog_('MIGRATION',summary);}
+function removedCandidateRows_(before,next){
+  const beforeTables=tablesFor_(before),nextTables=tablesFor_(next),removed=[];
+  Object.keys(beforeTables).forEach(function(name){
+    const nextIds=new Set(nextTables[name].map(rowKey_));
+    beforeTables[name].map(rowKey_).filter(Boolean).forEach(function(id){if(!nextIds.has(id))removed.push(name+':'+id);});
+  });
+  return removed;
+}
+/** Refreshes a previously verified rehearsal ledger after additive/updated V4 data.
+ * It refuses any operation that would remove a row, never changes the production
+ * pointer, and requires a fresh raw backup matching the current swtm2 value.
+ */
+function refreshProductionMigrationCandidate(){
+  const owner=rehearsalOwner_(),backup=latestMatchingRawBackup_();
+  verifyPrivateAsset_(DriveApp.getFileById(REHEARSAL_SPREADSHEET_ID),owner);
+  return withLock_(function(){
+    const props=PropertiesService.getScriptProperties();
+    if(props.getProperty(LEDGER_POINTER))throw Error('운영 원장 전환 전 후보에서만 실행할 수 있습니다.');
+    const raw=props.getProperty(DATA_KEY),source=rehearseMigration_(raw),next=source.data;
+    if(backup.value.properties[DATA_KEY]!==raw)throw Error('최신 원본 백업이 아닙니다.');
+    next.migrationSourceChecksum=checksum_(raw);
+    const loaded=readLedger_(REHEARSAL_SPREADSHEET_ID),removed=removedCandidateRows_(loaded.data,next);
+    if(removed.length)throw Error('후보 갱신에 행 삭제가 필요합니다. 새 빈 원장을 사용하세요. 삭제 대상 '+removed.length+'건');
+    writeLedger_(REHEARSAL_SPREADSHEET_ID,loaded.data,next,loaded.sheets);
+    const verified=readLedger_(REHEARSAL_SPREADSHEET_ID).data,digest=checksum_(next);
+    if(checksum_(verified)!==digest)throw Error('후보 갱신 후 체크섬 불일치. 운영 전환 금지.');
+    props.setProperty('swtm_stage_'+REHEARSAL_SPREADSHEET_ID,JSON.stringify({checksum:digest,ready:true}));
+    return rehearsalLog_('REFRESH',{backupFileId:backup.file.getId(),integrity:integrity_(verified),reviewRequiredCount:source.uncertain.length,removedCount:0,sourceOfTruth:'swtm2'});
+  });
+}
+function activateProductionLedgerCandidate(){
+  const owner=rehearsalOwner_(),backup=latestMatchingRawBackup_(),props=PropertiesService.getScriptProperties(),raw=props.getProperty(DATA_KEY);
+  if(props.getProperty(LEDGER_POINTER))throw Error('운영 원장이 이미 지정되어 있습니다.');
+  if(backup.value.properties[DATA_KEY]!==raw)throw Error('최종 백업 이후 운영 원본이 변경되었습니다. 다시 백업하세요.');
+  const source=rehearseMigration_(raw),target=readLedger_(REHEARSAL_SPREADSHEET_ID).data,expected=copy_(source.data);expected.migrationSourceChecksum=checksum_(raw);
+  if(checksum_(target)!==checksum_(expected))throw Error('최종 원본과 후보 원장이 다릅니다. 운영 전환 금지.');
+  if(source.uncertain.length)throw Error('불확실한 과거 근태 확인이 먼저 필요합니다.');
+  const activated=activateLedger_(REHEARSAL_SPREADSHEET_ID,owner,checksum_(target));
+  return rehearsalLog_('ACTIVATE',{backupFileId:backup.file.getId(),integrity:integrity_(target),sourceOfTruth:activated.sourceOfTruth,legacy:activated.legacy});
+}
 function verifyProductionMigrationRehearsal(){
   const raw=PropertiesService.getScriptProperties().getProperty(DATA_KEY),source=rehearseMigration_(raw),started=Date.now(),target=readLedger_(REHEARSAL_SPREADSHEET_ID).data,readMs=Date.now()-started,validated=validateLedger_(target),expected=copy_(source.data);expected.migrationSourceChecksum=checksum_(raw);
   return rehearsalLog_('VERIFY',{source:source.original,target:integrity_(target),expectedTarget:integrity_(expected),countsMatch:canonical_(source.target.counts)===canonical_(integrity_(target).counts),checksumMatch:checksum_(expected)===checksum_(target),relationIntegrity:validated,reviewRequiredCount:source.uncertain.length,readMs:readMs,sourceOfTruth:PropertiesService.getScriptProperties().getProperty(LEDGER_POINTER)?'Google Sheets':'swtm2'});
