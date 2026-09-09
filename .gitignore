@@ -1,6 +1,0 @@
-.private/
-.clasp.json
-.clasprc.json
-private-seoul-full-*.json
-private-properties-*.json
-*migration-dump*.json
