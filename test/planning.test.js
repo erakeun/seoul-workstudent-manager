@@ -28,10 +28,12 @@ test('preferences reject class conflicts and do not become actual work',()=>{
   const id=r.ledger().workPreferences[0].id;assert.equal(request(r,'studentDeleteWorkPreference',r.session('ub'),{itemId:id}).ok,false);assert.equal(request(r,'studentDeleteWorkPreference',r.studentToken,{itemId:id}).ok,true);
 });
 
-test('admin draft remains isolated until confirmation and then becomes future actual schedule',()=>{
-  const r=staged(base()),item={semesterId:'term',site:'general',studentId:'b',date:'2026-09-09',start:'13:00',end:'15:00'};let result=r.request('adminUpsertScheduleDraft',{item});assert.equal(result.ok,true,result.error);const draft=r.ledger().scheduleDrafts[0];assert.equal(draft.status,'DRAFT');assert.equal(r.ledger().schedules.length,1);
+test('admin can partially assign and edit a draft inside availability before confirmation',()=>{
+  const r=staged(base()),item={semesterId:'term',site:'general',studentId:'b',date:'2026-09-09',start:'09:00',end:'10:00',availabilityStart:'09:00',availabilityEnd:'12:00'};let result=r.request('adminUpsertScheduleDraft',{item});assert.equal(result.ok,true,result.error);const draft=r.ledger().scheduleDrafts[0];assert.equal(draft.status,'DRAFT');assert.equal(draft.end,'10:00');assert.equal(draft.availabilityEnd,'12:00');assert.equal(r.ledger().schedules.length,1);
+  result=r.request('adminUpsertScheduleDraft',{item:{...draft,end:'11:00'}});assert.equal(result.ok,true,result.error);assert.equal(r.ledger().scheduleDrafts[0].end,'11:00');
+  result=r.request('adminUpsertScheduleDraft',{item:{...draft,start:'08:30',end:'10:00'}});assert.equal(result.ok,false);assert.match(result.error,/가능시간/);
   result=request(r,'adminConfirmScheduleDraft',r.viewerToken,{itemId:draft.id});assert.equal(result.ok,false);assert.match(result.error,/관리자 권한/);
-  result=r.request('adminConfirmScheduleDraft',{itemId:draft.id});assert.equal(result.ok,true,result.error);assert.equal(r.ledger().scheduleDrafts[0].status,'CONFIRMED');assert.equal(r.ledger().schedules.length,2);assert.equal(r.ledger().schedules[1].createdFromDraftId,draft.id);
+  result=r.request('adminConfirmScheduleDraft',{itemId:draft.id});assert.equal(result.ok,true,result.error);assert.equal(r.ledger().scheduleDrafts[0].status,'CONFIRMED');assert.equal(r.ledger().schedules.length,2);assert.equal(r.ledger().schedules[1].createdFromDraftId,draft.id);assert.equal(r.ledger().schedules[1].end,'11:00');
 });
 
 test('candidate calculation excludes class conflict, other site, inactive and conflicting workers',()=>{
